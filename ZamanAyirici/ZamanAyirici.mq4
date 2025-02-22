@@ -8,6 +8,7 @@ extern color LineColor = clrRed;       // Çizgi rengi
 extern int   LineWidth = 1;            // Çizgi kalınlığı
 extern int   DaysToDraw = 5;          // Geriye dönük gün sayısı
 extern int   DayStartHour = 1;        // Gün başlangıç saati (varsayılan 01:00)
+extern ENUM_LINE_STYLE LineStyle = STYLE_SOLID;  // Çizgi stili
 
 int lastPeriod = 0;
 
@@ -84,7 +85,7 @@ void RedrawLines()
          // Çizgi özellikleri
          ObjectSet(name, OBJPROP_COLOR, LineColor);
          ObjectSet(name, OBJPROP_WIDTH, LineWidth);
-         ObjectSet(name, OBJPROP_STYLE, STYLE_SOLID);
+         ObjectSet(name, OBJPROP_STYLE, LineStyle);  // Burada değişiklik yapıldı
          ObjectSet(name, OBJPROP_BACK, true);          // Çizgiyi arka plana gönder
          ObjectSet(name, OBJPROP_SELECTABLE, false);   // Çizgiyi seçilemez yap
          ObjectSetText(name, "");                      // Çizgi ismini boş bırak
