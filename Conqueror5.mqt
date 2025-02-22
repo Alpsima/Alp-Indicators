@@ -1,0 +1,336 @@
+//+------------------------------------------------------------------+
+//|                                           Conqueror Indicator    |
+//|                        Copyright 2025, MetaQuotes Software Corp. |
+//|                                       http://www.metaquotes.net/ |
+//+------------------------------------------------------------------+
+#property strict
+#property indicator_chart_window
+#property indicator_buffers 3  // MA ve ATR için tampon ekliyoruz
+
+// Parametreler
+input int MA_Period = 10; // Ana Moving Average periodu
+input int MA_Shift = 0;
+input ENUM_MA_METHOD MA_Method = MODE_SMA;
+input ENUM_APPLIED_PRICE MA_Price = PRICE_CLOSE;
+input color MA_Color = clrDarkGray;  // MA çizgi rengi - bağımsız
+input int MA_Width = 1;              // MA çizgi kalınlığı - bağımsız
+
+// ATR parametreleri
+input int ATR_Period = 14;  // ATR periyodu
+input double MultiplierA = 0.5;  // A-B karşılaştırması için çarpan
+input double MultiplierB = 0.4;  // B-C karşılaştırması için çarpan
+input double MultiplierC = 0.6;  // A-D karşılaştırması için çarpan
+
+// Diğer parametreler
+input int LookBack_Periods = 20;    // C Sütunu için geriye dönük periyot
+input int LookBack_Close = 40; // D Sütunu için geçmiş kapanış periyodu
+
+// Tablo görünüm ayarları
+input int X_Coord = 15;
+input int Y_Coord = 50;
+input string FontName = "Arial";
+input int FontSize = 10;
+input color FontColor = clrBlack;
+input color TableBackgroundColor = clrWhite;
+input color HeaderBackgroundColor = C'40,40,40';
+input color HeaderTextColor = clrWhite;
+
+// Tamponlar
+double MA_Buffer[];  // MA için
+double ATR_Buffer[]; // ATR için
+double Table_Buffer[]; // Tablo hesaplamaları için
+
+string timeframes[] = {"M15", "M30", "H1", "H4", "D1", "W1"};
+double A_values[6], B_values[6], C_values[6], D_values[6];
+double E_values[6], F_values[6], G_values[6], ATR_values[6];
+string signals[6];
+
+// Sinyal renkleri için sabitler
+color SIGNAL_S_COLOR = clrRed;
+color SIGNAL_L_COLOR = clrGreen;
+color SIGNAL_H_COLOR = clrBlue;
+
+// Nesneleri takip etmek için dizi
+string created_objects[];
+
+//+------------------------------------------------------------------+
+int OnInit()
+{
+   // MA için tampon ve stil ayarı
+   SetIndexBuffer(0, MA_Buffer);
+   SetIndexStyle(0, DRAW_LINE, STYLE_SOLID, MA_Width, MA_Color);
+   SetIndexLabel(0, "Moving Average");
+   
+   // ATR için tampon
+   SetIndexBuffer(1, ATR_Buffer);
+   SetIndexStyle(1, DRAW_NONE);
+   
+   // Tablo hesaplamaları için tampon
+   SetIndexBuffer(2, Table_Buffer);
+   SetIndexStyle(2, DRAW_NONE);
+   
+   IndicatorShortName("Conqueror Indicator v5");
+   
+   // Önceki nesneleri temizle
+   DeleteAllObjects();
+   
+   return(INIT_SUCCEEDED);
+}
+
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+{
+   DeleteAllObjects();
+}
+
+//+------------------------------------------------------------------+
+void DeleteAllObjects()
+{
+   for(int i = ObjectsTotal() - 1; i >= 0; i--)
+   {
+      string name = ObjectName(i);
+      if(StringFind(name, "TableBG") == 0 || 
+         StringFind(name, "Header_") == 0 || 
+         StringFind(name, "Cell_") == 0 || 
+         StringFind(name, "Signal_") == 0)
+      {
+         ObjectDelete(0, name);
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+void TrackObject(string name)
+{
+   int size = ArraySize(created_objects);
+   ArrayResize(created_objects, size + 1);
+   created_objects[size] = name;
+}
+
+//+------------------------------------------------------------------+
+int OnCalculate(const int rates_total,
+                const int prev_calculated,
+                const datetime& time[],
+                const double& open[],
+                const double& high[],
+                const double& low[],
+                const double& close[],
+                const long& tick_volume[],
+                const long& volume[],
+                const int& spread[])
+{
+   if(rates_total < MA_Period) return(0);
+   
+   // Her hesaplamada önceki nesneleri temizle
+   DeleteAllObjects();
+   
+   int limit = rates_total - prev_calculated;
+
+   // MA ve ATR değerlerini hesapla ve tampona kaydet
+   for(int i = limit - 1; i >= 0; i--)
+   {
+      MA_Buffer[i] = iMA(NULL, 0, MA_Period, MA_Shift, MA_Method, MA_Price, i);
+      ATR_Buffer[i] = iATR(NULL, 0, ATR_Period, i);
+   }
+
+   CalculateSignals();
+   DrawTable();
+   return(rates_total);
+}
+
+//+------------------------------------------------------------------+
+void CalculateSignals()
+{
+   for(int tf_index = 0; tf_index < ArraySize(timeframes); tf_index++)
+   {
+      int timeframe = StringToTimeframe(timeframes[tf_index]);
+      if (timeframe == -1) continue;
+
+      double A = iClose(NULL, timeframe, 1);
+      double B = iMA(NULL, timeframe, MA_Period, 0, MA_Method, MA_Price, 1);
+      double C = iMA(NULL, timeframe, MA_Period, 0, MA_Method, MA_Price, LookBack_Periods + 1);
+      double D = iClose(NULL, timeframe, LookBack_Close + 1);
+      double currentATR = iATR(NULL, timeframe, ATR_Period, 1);
+
+      A_values[tf_index] = A;
+      B_values[tf_index] = B;
+      C_values[tf_index] = C;
+      D_values[tf_index] = D;
+      ATR_values[tf_index] = currentATR;
+
+      double E = A - B;
+      double F = B - C;
+      double G = A - D;
+
+      E_values[tf_index] = E;
+      F_values[tf_index] = F;
+      G_values[tf_index] = G;
+
+      // ATR bazlı dinamik eşik değerleri
+      double threshold_AB = currentATR * MultiplierA;
+      double threshold_BC = currentATR * MultiplierB;
+      double threshold_AD = currentATR * MultiplierC;
+
+      if(E > threshold_AB && F > threshold_BC && G > threshold_AD) 
+         signals[tf_index] = "L";
+      else if(E < -threshold_AB && F < -threshold_BC && G < -threshold_AD) 
+         signals[tf_index] = "S";
+      else 
+         signals[tf_index] = "H";
+   }
+}
+
+//+------------------------------------------------------------------+
+void DrawTable()
+{
+   int x = X_Coord;
+   int y = Y_Coord;
+   int column_width = 80;
+   int cell_height = FontSize + 10;
+   int signal_width = 30;
+   
+   CreateTableBackground(x, y, 6 * column_width, (ArraySize(timeframes) + 1) * cell_height);
+   
+   string headers[] = {"TF", "A", "B", "C", "D", "Signal"};
+   for(int i = 0; i < ArraySize(headers); i++)
+   {
+      CreateHeaderCell(headers[i], x + i * column_width, y, column_width, cell_height);
+   }
+   
+   y += cell_height;
+
+   for(int i = 0; i < ArraySize(timeframes); i++)
+   {
+      CreateCell(timeframes[i], x, y, column_width, cell_height);
+      CreateCell(FormatNumber(A_values[i]), x + column_width, y, column_width, cell_height);
+      CreateCell(FormatNumber(B_values[i]), x + 2 * column_width, y, column_width, cell_height);
+      CreateCell(FormatNumber(C_values[i]), x + 3 * column_width, y, column_width, cell_height);
+      CreateCell(FormatNumber(D_values[i]), x + 4 * column_width, y, column_width, cell_height);
+      CreateSignalCell(signals[i], x + 5 * column_width, y, column_width, cell_height);
+      
+      y += cell_height;
+   }
+}
+
+//+------------------------------------------------------------------+
+void CreateTableBackground(int x, int y, int width, int height)
+{
+   string name = "TableBG";
+   ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, 0);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x - 5);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y - 5);
+   ObjectSetInteger(0, name, OBJPROP_XSIZE, width + 10);
+   ObjectSetInteger(0, name, OBJPROP_YSIZE, height + 10);
+   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, TableBackgroundColor);
+   ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clrGray);
+   TrackObject(name);
+}
+
+//+------------------------------------------------------------------+
+void CreateHeaderCell(string text, int x, int y, int width, int height)
+{
+   string name = "Header_" + text;
+   
+   ObjectCreate(0, name + "_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_CORNER, 0);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_XSIZE, width - 1);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_YSIZE, height);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_BGCOLOR, HeaderBackgroundColor);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   TrackObject(name + "_BG");
+   
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, 0);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x + (width - TextWidth(text, FontName, FontSize)) / 2);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y + (height - FontSize) / 2);
+   ObjectSetString(0, name, OBJPROP_TEXT, text);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, HeaderTextColor);
+   ObjectSetString(0, name, OBJPROP_FONT, FontName);
+   TrackObject(name);
+}
+
+//+------------------------------------------------------------------+
+void CreateCell(string text, int x, int y, int width, int height)
+{
+   string name = "Cell_" + IntegerToString(x) + "_" + IntegerToString(y);
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, 0);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x + 5);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y + (height - FontSize) / 2);
+   ObjectSetString(0, name, OBJPROP_TEXT, text);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, FontColor);
+   ObjectSetString(0, name, OBJPROP_FONT, FontName);
+   TrackObject(name);
+}
+
+//+------------------------------------------------------------------+
+void CreateSignalCell(string signal, int x, int y, int width, int height)
+{
+   string name = "Signal_" + IntegerToString(y);
+   int signal_width = 30;
+   
+   color bgColor;
+   if(signal == "S") bgColor = SIGNAL_S_COLOR;
+   else if(signal == "L") bgColor = SIGNAL_L_COLOR;
+   else bgColor = SIGNAL_H_COLOR;
+   
+   int centerX = x + (width - signal_width) / 2;
+   
+   ObjectCreate(0, name + "_BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_CORNER, 0);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_XDISTANCE, centerX);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_YDISTANCE, y + 2);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_XSIZE, signal_width);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_YSIZE, height - 4);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_BGCOLOR, bgColor);
+   ObjectSetInteger(0, name + "_BG", OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   TrackObject(name + "_BG");
+   
+   ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, 0);
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, centerX + (signal_width - TextWidth(signal, FontName, FontSize)) / 2);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y + (height - FontSize) / 2);
+   ObjectSetString(0, name, OBJPROP_TEXT, signal);
+   ObjectSetInteger(0, name, OBJPROP_FONTSIZE, FontSize);
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clrWhite);
+   ObjectSetString(0, name, OBJPROP_FONT, FontName);
+   TrackObject(name);
+}
+
+//+------------------------------------------------------------------+
+int TextWidth(string text, string font, int fontSize)
+{
+   return StringLen(text) * fontSize * 3/4;
+}
+
+//+------------------------------------------------------------------+
+string FormatNumber(double value)
+{
+   string symbol = Symbol();
+   int digits = (int)MarketInfo(symbol, MODE_DIGITS);
+   return DoubleToString(value, digits);
+}
+
+//+------------------------------------------------------------------+
+int StringToTimeframe(string timeframe)
+{
+   if(timeframe == "M15") return PERIOD_M15;
+   if(timeframe == "M30") return PERIOD_M30;
+   if(timeframe == "H1") return PERIOD_H1;
+   if(timeframe == "H4") return PERIOD_H4;
+   if(timeframe == "D1") return PERIOD_D1;
+   if(timeframe == "W1") return PERIOD_W1;
+   return -1;
+}
+//+------------------------------------------------------------------+
+
+
+
+
+
