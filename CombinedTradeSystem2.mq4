@@ -1,85 +1,245 @@
 //+------------------------------------------------------------------+
-//| Para birimlerini ayıklama fonksiyonu                              |
+//|                                          CombinedTradeSystem2.mq4  |
+//|                                                                    |
 //+------------------------------------------------------------------+
-void GetSymbolCurrencies()
+#property copyright "Copyright 2024"
+#property link      ""
+#property version   "2.00"
+#property strict
+#property indicator_chart_window
+#property indicator_buffers 8
+
+// Sinyal Sabitleri
+#define SIGNAL_LONG    1
+#define SIGNAL_SHORT  -1
+#define SIGNAL_HOLD    0
+
+// Temel Ayarlar
+extern string     GeneralSettings    = "===== Genel Ayarlar =====";
+extern int        ShortPeriod       = 20;    // Kısa Donchian Periyodu
+extern int        LongPeriod        = 55;    // Uzun Donchian Periyodu
+extern int        EarlyExitBars     = 5;     // Early Exit Bar Sayısı
+extern double     PipThreshold      = 4.0;   // Pip Eşik Değeri
+
+// ATR Bazlı Eşik Ayarları
+extern string     ATRSettings       = "===== ATR Ayarları =====";
+extern int        ATR_Period        = 14;    // ATR Periyodu
+extern double     Mult_AB           = 0.5;   // (A-B) için ATR çarpanı
+extern double     Mult_BC           = 0.4;   // (B-C) için ATR çarpanı
+extern double     Mult_AD           = 0.6;   // (A-D) için ATR çarpanı
+
+// Haber Filtresi Ayarları
+extern string     NewsSettings      = "===== Haber Ayarları =====";
+extern bool       UseNewsFilter     = true;    // Haber Filtresi Kullan
+extern bool       FilterHighImpact  = true;    // Yüksek Etkili Haberler
+extern bool       FilterMediumImpact= false;   // Orta Etkili Haberler
+extern bool       FilterLowImpact   = false;   // Düşük Etkili Haberler
+extern int        NewsBeforeMinutes = 30;      // Haber Öncesi (Dakika)
+extern int        NewsAfterMinutes  = 30;      // Haber Sonrası (Dakika)
+extern string     NewsFile          = "forex_calendar.csv";  // Haber CSV dosyası
+
+// Alert Ayarları
+extern string     AlertSettings     = "===== Alert Ayarları =====";
+extern bool       EnableSoundAlert  = true;    // Sesli Alert
+extern bool       EnablePopupAlert  = true;    // Popup Mesaj
+
+// Conqueror3 Ayarları
+extern string     Con3Settings      = "===== Conqueror3 Ayarları =====";
+extern int        MVA_Period        = 10;    // Moving Average periyodu
+extern int        LookBack_Periods  = 20;    // MA karşılaştırma periyodu
+extern int        LookBack_Close    = 40;    // Kapanış karşılaştırma periyodu
+
+// Conqueror4 Ayarları
+extern string     Con4Settings      = "===== Conqueror4 Ayarları =====";
+extern int        Con4_MVA_Period   = 10;    // Conqueror4 MA periyodu
+extern int        Range_Period1     = 25;    // Kısa dönem periyodu
+extern int        Range_Period2     = 55;    // Uzun dönem periyodu
+
+// Görünüm Ayarları
+extern string     DisplaySettings    = "===== Görünüm Ayarları =====";
+extern int        TableX            = 1300;  // Tablo X Koordinatı
+extern int        TableY            = 20;    // Tablo Y Koordinatı
+extern color      HeaderColor       = C'40,40,40';  // Başlık Rengi
+extern color      TextColor         = clrWhite;     // Yazı Rengi
+extern color      LongColor         = clrForestGreen;   // Long Sinyal Rengi
+extern color      ShortColor        = clrCrimson;       // Short Sinyal Rengi
+extern color      HoldColor         = clrRoyalBlue;     // Hold Sinyal Rengi
+extern color      ATRColumnColor    = C'40,40,40';  // ATR Kolon Rengi
+extern string     FontName          = "Arial";      // Yazı Tipi
+extern int        FontSize          = 8;            // Yazı Boyutu
+extern int        ColumnWidth       = 60;           // Kolon Genişliği
+extern int        RowHeight         = 20;           // Satır Yüksekliği
+
+// Risk Tablosu Ayarları
+extern string     RiskTableSettings = "===== Risk Tablosu Ayarları =====";
+extern int        RiskTableX        = 20;    // Risk Tablosu X Koordinatı
+extern int        RiskTableY        = 20;    // Risk Tablosu Y Koordinatı
+
+// Global Değişkenler
+string           IndicatorName;
+string           IndicatorObjPrefix;
+int              TimeFrames[6];
+string           TimeFrameNames[6];
+
+// Haber yapısı ve dizisi
+struct NewsEvent {
+    datetime time;
+    string currency;
+    string event;
+    string impact;
+    int minutesUntil;
+};
+NewsEvent activeNews[];
+
+// Para birimi bilgisi
+string currentSymbolCurrencies[2];  // Örn: EUR/USD için [EUR, USD]
+
+// İndikatör tamponları
+double DC20Upper[], DC20Lower[], DC20Mid[];
+double DC55Upper[], DC55Lower[], DC55Mid[];
+double ADXBuffer[], ADXPlusBuffer[];
+
+// Son alert durumları takibi için
+datetime LastAlertTime[];
+int LastDCSignal[];
+
+// Risk faktörleri için
+bool hasHighSpread = false;
+bool hasHighVolatility = false;
+bool hasUpcomingNews = false;
+double currentATR = 0;
+double currentSpread = 0;
+
+//+------------------------------------------------------------------+
+//| Custom indicator initialization function                           |
+//+------------------------------------------------------------------+
+int init()
 {
-   string symbol = Symbol();
+   Print("CombinedTradeSystem2 başlatılıyor...");
    
-   // Normal forex çiftleri için (örn: EURUSD)
-   if(StringLen(symbol) == 6)
-   {
-      currentSymbolCurrencies[0] = StringSubstr(symbol, 0, 3);
-      currentSymbolCurrencies[1] = StringSubstr(symbol, 3, 3);
-   }
-   // Metaller için (örn: XAUUSD)
-   else if(StringLen(symbol) == 6 && 
-           (StringSubstr(symbol, 0, 3) == "XAU" || 
-            StringSubstr(symbol, 0, 3) == "XAG"))
-   {
-      currentSymbolCurrencies[0] = StringSubstr(symbol, 0, 3);
-      currentSymbolCurrencies[1] = StringSubstr(symbol, 3, 3);
-   }
-   // Endeksler için özel kontrol
-   else
-   {
-      if(StringFind(symbol, "US30") != -1 || 
-         StringFind(symbol, "SPX500") != -1 || 
-         StringFind(symbol, "NAS100") != -1)
-      {
-         currentSymbolCurrencies[0] = "USD";
-         currentSymbolCurrencies[1] = "USD";
-      }
-      else if(StringFind(symbol, "GER30") != -1 || 
-              StringFind(symbol, "FRA40") != -1)
-      {
-         currentSymbolCurrencies[0] = "EUR";
-         currentSymbolCurrencies[1] = "EUR";
-      }
-      else if(StringFind(symbol, "UK100") != -1)
-      {
-         currentSymbolCurrencies[0] = "GBP";
-         currentSymbolCurrencies[1] = "GBP";
-      }
-   }
+   // Timeframe dizilerini doldur
+   TimeFrames[0] = PERIOD_W1;
+   TimeFrames[1] = PERIOD_D1;
+   TimeFrames[2] = PERIOD_H4;
+   TimeFrames[3] = PERIOD_H1;
+   TimeFrames[4] = PERIOD_M30;
+   TimeFrames[5] = PERIOD_M15;
+   
+   TimeFrameNames[0] = "W";
+   TimeFrameNames[1] = "D";
+   TimeFrameNames[2] = "4H";
+   TimeFrameNames[3] = "1H";
+   TimeFrameNames[4] = "30M";
+   TimeFrameNames[5] = "15M";
+   
+   IndicatorName = "CombinedTradeSystem2";
+   IndicatorObjPrefix = "##" + IndicatorName + "##";
+   
+   // Alert takibi için dizileri hazırla
+   ArrayResize(LastAlertTime, ArraySize(TimeFrames));
+   ArrayResize(LastDCSignal, ArraySize(TimeFrames));
+   ArrayInitialize(LastAlertTime, 0);
+   ArrayInitialize(LastDCSignal, SIGNAL_HOLD);
+   
+   // Para birimlerini ayarla
+   GetSymbolCurrencies();
+   
+   // Buffer ayarları
+   SetIndexBuffer(0, DC20Upper);
+   SetIndexBuffer(1, DC20Lower);
+   SetIndexBuffer(2, DC20Mid);
+   SetIndexBuffer(3, DC55Upper);
+   SetIndexBuffer(4, DC55Lower);
+   SetIndexBuffer(5, DC55Mid);
+   SetIndexBuffer(6, ADXBuffer);
+   SetIndexBuffer(7, ADXPlusBuffer);
+   
+   EventSetTimer(60);
+   Print("Timer ayarlandı");
+   
+   return(INIT_SUCCEEDED);
 }
 
 //+------------------------------------------------------------------+
-//| Haber dosyasını okuma fonksiyonu                                  |
+//| Custom indicator deinitialization function                         |
 //+------------------------------------------------------------------+
-bool ReadNewsFile()
+int deinit()
 {
-   Print("Haber dosyası okuma başladı");
-   ArrayResize(activeNews, 0);
+   ObjectsDeleteAll(0, IndicatorObjPrefix);
+   return(0);
+}
+
+//+------------------------------------------------------------------+
+//| Haber kontrolü yapan fonksiyon                                    |
+//+------------------------------------------------------------------+
+void CheckNews()
+{
+   Print("CheckNews fonksiyonu başladı");
+   string file_path = TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL4\\Files\\forex_calendar.csv";
+   Print("Haber dosyası yolu: " + file_path);
    
-   string filename = NewsFile;
-   Print("Dosya yolu: ", filename);
+   if(!FileIsExist(file_path))
+   {
+      Print("Dosya bulunamadı: " + file_path);
+      return;
+   }
    
-   int handle = FileOpen(filename, FILE_READ|FILE_CSV|FILE_ANSI, ",");
+   int handle = FileOpen(file_path, FILE_READ|FILE_CSV|FILE_ANSI);
    if(handle == INVALID_HANDLE)
    {
-      Print("Haber dosyası açılamadı: ", filename, " - Hata kodu: ", GetLastError());
-      return false;
+      Print("Dosya açılamadı. Hata kodu: ", GetLastError());
+      return;
    }
    
    Print("Dosya başarıyla açıldı");
-   datetime currentTime = TimeCurrent();
-   Print("Mevcut zaman: ", TimeToString(currentTime));
+   datetime current_time = TimeLocal();
+   string separator = ",";
    
-   // Başlık satırını atla
-   if(FileIsEnding(handle)) 
-   { 
-      Print("Dosya boş");
-      FileClose(handle); 
-      return false; 
-   }
-   FileReadString(handle);
+   // Header satırını atla
+   string header = FileReadString(handle);
    
    while(!FileIsEnding(handle))
    {
-      string dateStr = FileReadString(handle);
-      string timeStr = FileReadString(handle);
-      string currency = FileReadString(handle);
-      string
+      // Tüm satırı tek seferde oku
+      string full_line = FileReadString(handle);
+      if(StringLen(full_line) < 5) continue; // Boş satırları atla
+      
+      // Satırı parçalara ayır
+      string parts[];
+      StringSplit(full_line, StringGetCharacter(separator, 0), parts);
+      
+      if(ArraySize(parts) < 5)
+      {
+         Print("Hatalı satır formatı: ", full_line);
+         continue;
+      }
+      
+      string date_str = parts[0];
+      string time_str = parts[1];
+      string currency = parts[2];
+      string event = parts[3];
+      string impact = parts[4];
+      
+      // Tarih ve saati işle
+      datetime news_time = StringToTime(date_str + " " + time_str);
+      
+      Print("İşlenen haber: Tarih=", date_str, " Saat=", time_str, 
+            " Para Birimi=", currency, " Olay=", event, " Etki=", impact,
+            " Unix Time=", news_time);
+            
+      // Para birimi kontrolü
+      if(StringFind(Symbol(), currency) >= 0)
+      {
+         if(news_time > current_time)
+         {
+            Print("Aktif haber bulundu: ", currency, " - ", event);
+         }
+      }
+   }
+   
+   FileClose(handle);
+   Print("Dosya kapatıldı ve işlem tamamlandı");
+}
 
 //+------------------------------------------------------------------+
 //| Para birimlerini ayıklama fonksiyonu                              |
@@ -499,7 +659,7 @@ string TimeframeToString(int timeframe)
       case PERIOD_M30: return "M30";
       case PERIOD_H1:  return "H1";
       case PERIOD_H4:  return "H4";
-      case PERIOD_D1:  return "D1";
+      ccase PERIOD_D1:  return "D1";
       case PERIOD_W1:  return "W1";
       case PERIOD_MN1: return "MN";
       default: return "Unknown";
@@ -730,10 +890,4 @@ int start()
    return(0);
 }
 //+------------------------------------------------------------------+
-
-
-
-
-
-
 
