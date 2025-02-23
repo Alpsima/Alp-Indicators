@@ -9,7 +9,7 @@
 
 // Görünüm Ayarları
 extern color      HeaderColor       = C'40,40,40';  // Başlık Rengi
-extern color      TextColor         = clrWhite;     // Yazı Rengi
+extern color      TextColor         = clrWhite;     // Yazı Rengi 
 extern color      LongColor        = clrForestGreen;   // Long Sinyal Rengi
 extern color      ShortColor       = clrCrimson;       // Short Sinyal Rengi
 extern color      HoldColor        = clrRoyalBlue;     // Hold Sinyal Rengi
@@ -62,6 +62,7 @@ extern double     Weight_M15       = 3.0;   // M15 Timeframe Ağırlığı (%)
 extern string     DistributionSettings = "===== Dağılım Formatı =====";
 extern int        DistributionPrecision = 0;    // Dağılım yüzde hassasiyeti
 extern string     DistributionPrefix = "D%: ";   // Dağılım başlık öneki
+extern int        DistributionSpacing = 2;      // Dağılım değerleri arası boşluk
 
 // Sabitler
 #define SIGNAL_LONG    1
@@ -264,6 +265,35 @@ bool FindLastValidChannel(string symbol, int timeframe, int period, double &last
 }
 
 //+------------------------------------------------------------------+
+//| Signal Değerlendirme Fonksiyonları                                |
+//+------------------------------------------------------------------+
+void GetSignalState(string symbol, int timeframe, int &signals[])
+{
+   ArrayResize(signals, 7);
+   
+   // DC Sinyali
+   signals[0] = CalculateDCSignal(symbol, timeframe);
+   
+   // DCO Sinyali
+   signals[1] = CalculateDCOSignal(symbol, timeframe);
+   
+   // CON3 Sinyali
+   signals[2] = CalculateConqueror3Signal(symbol, timeframe);
+
+   // CON4 Sinyali
+   signals[3] = CalculateConqueror4Signal(symbol, timeframe);
+   
+   // Signal1 (DCO, CON3, CON4)
+   signals[4] = EvaluateSignal1(signals[1], signals[2], signals[3]);
+   
+   // Signal2 (DC, DCO, CON3, CON4)
+   signals[5] = EvaluateSignal2(signals[0], signals[1], signals[2], signals[3]);
+   
+   // ADX - Doğrudan iADX değerini alıyoruz
+   signals[6] = (int)(iADX(symbol, timeframe, ADX_Period, PRICE_CLOSE, MODE_MAIN, 0) * 100);  // 100 ile çarpıp tam sayı yapıyoruz
+}
+
+//+------------------------------------------------------------------+
 //| Signal1 Değerlendirme (DCO, CON3, CON4)                          |
 //+------------------------------------------------------------------+
 int EvaluateSignal1(int dcoSignal, int con3Signal, int con4Signal)
@@ -291,140 +321,6 @@ int EvaluateSignal2(int dcSignal, int dcoSignal, int con3Signal, int con4Signal)
       return SIGNAL_SHORT;
    
    return SIGNAL_HOLD;
-}
-
-//+------------------------------------------------------------------+
-//| Tablo pozisyonunu hesapla                                         |
-//+------------------------------------------------------------------+
-void CalculateTablePosition(int index, int &x, int &y)
-{
-   int row = index / TablesPerRow;
-   int col = index % TablesPerRow;
-   
-   // Tek tablonun toplam genişliği
-   int totalWidth = 8 * ColumnWidth;  // 8 sütun
-   
-   x = TableX + col * (totalWidth + TableSpacingX);
-   y = TableY + row * ((ArraySize(TimeframeList) + 1) * RowHeight + TitleSpacing + TableSpacingY);
-}
-
-//+------------------------------------------------------------------+
-//| Tablo oluşturma fonksiyonu                                        |
-//+------------------------------------------------------------------+
-void CreateTable(string symbol, int baseX, int baseY)
-{
-   // Başlıklar
-   string headers[8] = {"TF", "DC", "DCO", "CON3", "CON4", "Sig1", "Sig2", "ADX"};
-   
-   // Sembol başlığı - daha belirgin ve daha yüksekte
-   CreateLabel(symbol + "_Title", symbol, baseX, baseY - TitleSpacing, TitleFontSize, TitleColor);
-   
-   // Başlık satırı
-   for(int i = 0; i < ArraySize(headers); i++)
-   {
-      CreateTableCell(symbol + "_Header_" + IntegerToString(i), 
-                     headers[i], 
-                     baseX + i * ColumnWidth, 
-                     baseY, 
-                     HeaderColor);
-   }
-   
-   // Her timeframe için sinyal değerlerini al ve göster
-   for(int row = 0; row < ArraySize(TimeframeList); row++)
-   {
-      int y = baseY + (row + 1) * RowHeight;
-      int signals[7];  // DC, DCO, CON3, CON4, Sig1, Sig2, ADX
-      
-      GetSignalState(symbol, TimeframeValues[row], signals);
-      
-      // Timeframe sütunu
-      CreateTableCell(symbol + "_TF_" + IntegerToString(row), 
-                     TimeframeList[row], 
-                     baseX, 
-                     y, 
-                     HeaderColor);
-      
-      // Sinyal sütunları
-      for(int col = 0; col < 6; col++)
-      {
-         string signalText = (signals[col] == SIGNAL_LONG) ? "L" : 
-                            (signals[col] == SIGNAL_SHORT) ? "S" : "H";
-         color signalColor = (signals[col] == SIGNAL_LONG) ? LongColor :
-                            (signals[col] == SIGNAL_SHORT) ? ShortColor : HoldColor;
-                            
-         CreateTableCell(symbol + "_Data_" + IntegerToString(row) + "_" + IntegerToString(col), 
-                        signalText,
-                        baseX + (col + 1) * ColumnWidth,
-                        y,
-                        signalColor);
-      }
-      
-      // ADX sütunu
-      double adx = signals[6] / 100.0;  // Tam sayıdan geri double'a çeviriyoruz
-      color adxColor = (adx >= ADX_Threshold) ? LongColor : 
-                      ((adx >= 20.0) ? HoldColor : ShortColor);
-      
-      CreateTableCell(symbol + "_Data_" + IntegerToString(row) + "_6",
-                     DoubleToStr(adx, 1),  // Bir ondalık basamak gösteriyoruz
-                     baseX + 7 * ColumnWidth,
-                     y,
-                     adxColor);
-   }
-   
-   // Dağılım bilgisini ekle
-   double longPercent = 0, shortPercent = 0, holdPercent = 0;
-   CalculateWeightedSignalDistribution(symbol, longPercent, shortPercent, holdPercent);
-   
-   string distribution = DistributionPrefix + 
-                        "L(" + DoubleToStr(MathRound(longPercent), DistributionPrecision) + ")  " + 
-                        "S(" + DoubleToStr(MathRound(shortPercent), DistributionPrecision) + ")  " + 
-                        "H(" + DoubleToStr(MathRound(holdPercent), DistributionPrecision) + ")";
-                        
-   CreateLabel(symbol + "_Distribution", distribution,
-               baseX, baseY + (ArraySize(TimeframeList) + 2) * RowHeight,
-               DistributionFontSize, DistributionTextColor);
-}
-
-//+------------------------------------------------------------------+
-//| Tek hücre oluşturma fonksiyonu                                    |
-//+------------------------------------------------------------------+
-void CreateTableCell(string name, string text, int x, int y, color bgColor)
-{
-   string objName = IndicatorObjPrefix + name;
-   
-   // Arka plan dikdörtgeni
-   if(ObjectFind(0, objName + "BG") < 0)
-      ObjectCreate(0, objName + "BG", OBJ_RECTANGLE_LABEL, 1, 0, 0);
-      
-   ObjectSetInteger(0, objName + "BG", OBJPROP_XDISTANCE, x);
-   ObjectSetInteger(0, objName + "BG", OBJPROP_YDISTANCE, y);
-   ObjectSetInteger(0, objName + "BG", OBJPROP_XSIZE, ColumnWidth);
-   ObjectSetInteger(0, objName + "BG", OBJPROP_YSIZE, RowHeight);
-   ObjectSetInteger(0, objName + "BG", OBJPROP_BGCOLOR, bgColor);
-   ObjectSetInteger(0, objName + "BG", OBJPROP_BORDER_TYPE, BORDER_FLAT);
-   ObjectSetInteger(0, objName + "BG", OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   
-   // Metin etiketi
-   CreateLabel(name + "_Text", text, x + 5, y + 2, FontSize, TextColor);
-}
-
-//+------------------------------------------------------------------+
-//| Etiket oluşturma fonksiyonu                                       |
-//+------------------------------------------------------------------+
-void CreateLabel(string name, string text, int x, int y, int fontSize, color textColor)
-{
-   string objName = IndicatorObjPrefix + name;
-   
-   if(ObjectFind(0, objName) < 0)
-      ObjectCreate(0, objName, OBJ_LABEL, 1, 0, 0);
-      
-   ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, x);
-   ObjectSetInteger(0, objName, OBJPROP_YDISTANCE, y);
-   ObjectSetString(0, objName, OBJPROP_TEXT, text);
-   ObjectSetString(0, objName, OBJPROP_FONT, FontName);
-   ObjectSetInteger(0, objName, OBJPROP_FONTSIZE, fontSize);
-   ObjectSetInteger(0, objName, OBJPROP_COLOR, textColor);
-   ObjectSetInteger(0, objName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
 }
 
 //+------------------------------------------------------------------+
@@ -522,6 +418,142 @@ void CalculateWeightedSignalDistribution(string symbol, double &longPercent, dou
 }
 
 //+------------------------------------------------------------------+
+//| Tablo pozisyonunu hesapla                                         |
+//+------------------------------------------------------------------+
+void CalculateTablePosition(int index, int &x, int &y)
+{
+   int row = index / TablesPerRow;
+   int col = index % TablesPerRow;
+   
+   // Tek tablonun toplam genişliği
+   int totalWidth = 8 * ColumnWidth;  // 8 sütun
+   
+   x = TableX + col * (totalWidth + TableSpacingX);
+   y = TableY + row * ((ArraySize(TimeframeList) + 1) * RowHeight + TitleSpacing + TableSpacingY);
+}
+
+//+------------------------------------------------------------------+
+//| Tablo oluşturma fonksiyonu                                        |
+//+------------------------------------------------------------------+
+void CreateTable(string symbol, int baseX, int baseY)
+{
+   // Başlıklar
+   string headers[8] = {"TF", "DC", "DCO", "CON3", "CON4", "Sig1", "Sig2", "ADX"};
+   
+   // Sembol başlığı - daha belirgin ve daha yüksekte
+   CreateLabel(symbol + "_Title", symbol, baseX, baseY - TitleSpacing, TitleFontSize, TitleColor);
+   
+   // Başlık satırı
+   for(int i = 0; i < ArraySize(headers); i++)
+   {
+      CreateTableCell(symbol + "_Header_" + IntegerToString(i), 
+                     headers[i], 
+                     baseX + i * ColumnWidth, 
+                     baseY, 
+                     HeaderColor);
+   }
+   
+   // Her timeframe için sinyal değerlerini al ve göster
+   for(int row = 0; row < ArraySize(TimeframeList); row++)
+   {
+      int y = baseY + (row + 1) * RowHeight;
+      int signals[7];  // DC, DCO, CON3, CON4, Sig1, Sig2, ADX
+      
+      GetSignalState(symbol, TimeframeValues[row], signals);
+      
+      // Timeframe sütunu
+      CreateTableCell(symbol + "_TF_" + IntegerToString(row), 
+                     TimeframeList[row], 
+                     baseX, 
+                     y, 
+                     HeaderColor);
+      
+      // Sinyal sütunları
+      for(int col = 0; col < 6; col++)
+      {
+         string signalText = (signals[col] == SIGNAL_LONG) ? "L" : 
+                            (signals[col] == SIGNAL_SHORT) ? "S" : "H";
+         color signalColor = (signals[col] == SIGNAL_LONG) ? LongColor :
+                            (signals[col] == SIGNAL_SHORT) ? ShortColor : HoldColor;
+                            
+         CreateTableCell(symbol + "_Data_" + IntegerToString(row) + "_" + IntegerToString(col), 
+                        signalText,
+                        baseX + (col + 1) * ColumnWidth,
+                        y,
+                        signalColor);
+      }
+      
+      // ADX sütunu
+      double adx = signals[6] / 100.0;  // Tam sayıdan geri double'a çeviriyoruz
+      color adxColor = (adx >= ADX_Threshold) ? LongColor : 
+                      ((adx >= 20.0) ? HoldColor : ShortColor);
+      
+      CreateTableCell(symbol + "_Data_" + IntegerToString(row) + "_6",
+                     DoubleToStr(adx, 1),  // Bir ondalık basamak gösteriyoruz
+                     baseX + 7 * ColumnWidth,
+                     y,
+                     adxColor);
+   }
+   
+   // Dağılım bilgisini ekle
+   double longPercent = 0, shortPercent = 0, holdPercent = 0;
+   CalculateWeightedSignalDistribution(symbol, longPercent, shortPercent, holdPercent);
+   
+   string distribution = DistributionPrefix + 
+                        "L(" + DoubleToStr(MathRound(longPercent), DistributionPrecision) + ")" + 
+                        StringRepeat(" ", DistributionSpacing) +
+                        "S(" + DoubleToStr(MathRound(shortPercent), DistributionPrecision) + ")" +
+                        StringRepeat(" ", DistributionSpacing) +
+                        "H(" + DoubleToStr(MathRound(holdPercent), DistributionPrecision) + ")";
+                        
+   CreateLabel(symbol + "_Distribution", distribution,
+               baseX, baseY + (ArraySize(TimeframeList) + 2) * RowHeight,
+               DistributionFontSize, DistributionTextColor);
+}
+
+//+------------------------------------------------------------------+
+//| Tek hücre oluşturma fonksiyonu                                    |
+//+------------------------------------------------------------------+
+void CreateTableCell(string name, string text, int x, int y, color bgColor)
+{
+   string objName = IndicatorObjPrefix + name;
+   
+   // Arka plan dikdörtgeni
+   if(ObjectFind(0, objName + "BG") < 0)
+      ObjectCreate(0, objName + "BG", OBJ_RECTANGLE_LABEL, 1, 0, 0);
+      
+   ObjectSetInteger(0, objName + "BG", OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, objName + "BG", OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, objName + "BG", OBJPROP_XSIZE, ColumnWidth);
+   ObjectSetInteger(0, objName + "BG", OBJPROP_YSIZE, RowHeight);
+   ObjectSetInteger(0, objName + "BG", OBJPROP_BGCOLOR, bgColor);
+   ObjectSetInteger(0, objName + "BG", OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSetInteger(0, objName + "BG", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   
+   // Metin etiketi
+   CreateLabel(name + "_Text", text, x + 5, y + 2, FontSize, TextColor);
+}
+
+//+------------------------------------------------------------------+
+//| Etiket oluşturma fonksiyonu                                       |
+//+------------------------------------------------------------------+
+void CreateLabel(string name, string text, int x, int y, int fontSize, color textColor)
+{
+   string objName = IndicatorObjPrefix + name;
+   
+   if(ObjectFind(0, objName) < 0)
+      ObjectCreate(0, objName, OBJ_LABEL, 1, 0, 0);
+      
+   ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, objName, OBJPROP_YDISTANCE, y);
+   ObjectSetString(0, objName, OBJPROP_TEXT, text);
+   ObjectSetString(0, objName, OBJPROP_FONT, FontName);
+   ObjectSetInteger(0, objName, OBJPROP_FONTSIZE, fontSize);
+   ObjectSetInteger(0, objName, OBJPROP_COLOR, textColor);
+   ObjectSetInteger(0, objName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+}
+
+//+------------------------------------------------------------------+
 //| Custom indicator iteration function                                |
 //+------------------------------------------------------------------+
 int OnCalculate(const int rates_total,
@@ -559,6 +591,10 @@ int OnCalculate(const int rates_total,
    return(rates_total);
 }
 //+------------------------------------------------------------------+
+
+
+
+
 
 
 
