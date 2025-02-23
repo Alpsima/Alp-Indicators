@@ -208,4 +208,3 @@ void GetSymbolCurrencies()
       }
    }
 }
-Last edited just now
