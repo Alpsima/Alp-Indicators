@@ -168,6 +168,61 @@ int deinit()
 }
 
 //+------------------------------------------------------------------+
+//| Haber kontrolü yapan fonksiyon                                    |
+//+------------------------------------------------------------------+
+void CheckNews()
+{
+   Print("CheckNews fonksiyonu başladı");
+   string file_path = TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL4\\Files\\forex_calendar.csv";
+   Print("Haber dosyası yolu: " + file_path);
+   
+   if(FileIsExist(file_path))
+   {
+      Print("Dosya mevcut");
+   }
+   else
+   {
+      Print("Dosya bulunamadı: " + file_path);
+      return;
+   }
+   
+   int handle = FileOpen(file_path, FILE_READ|FILE_CSV);
+   if(handle == INVALID_HANDLE)
+   {
+      Print("Dosya açılamadı. Hata kodu: ", GetLastError());
+      return;
+   }
+   Print("Dosya başarıyla açıldı");
+
+   string line;
+   bool header_skipped = false;
+   datetime current_time = TimeLocal();
+   
+   while(!FileIsEnding(handle))
+   {
+      line = FileReadString(handle);
+      if(!header_skipped)
+      {
+         header_skipped = true;
+         Print("Header satırı atlandı");
+         continue;
+      }
+      
+      // Satır bilgilerini al ve kontrol et
+      string date_str = FileReadString(handle);
+      string time_str = FileReadString(handle);
+      string currency = FileReadString(handle);
+      string event = FileReadString(handle);
+      string impact = FileReadString(handle);
+      
+      Print("Okunan haber: ", date_str, " ", time_str, " ", currency, " ", event, " ", impact);
+   }
+   
+   FileClose(handle);
+   Print("Dosya kapatıldı");
+}
+
+//+------------------------------------------------------------------+
 //| Para birimlerini ayıklama fonksiyonu                              |
 //+------------------------------------------------------------------+
 void GetSymbolCurrencies()
