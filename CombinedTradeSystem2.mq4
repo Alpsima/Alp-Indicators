@@ -344,3 +344,154 @@ void UpdateRiskTable()
       }
    }
 }
+
+//+------------------------------------------------------------------+
+//| Donchian Channel Middle Line Signal                               |
+//+------------------------------------------------------------------+
+int CalculateDCOSignal(int timeframe)
+{
+   double currentClose = iClose(NULL, timeframe, 0);
+   double midLine = (iHigh(NULL, timeframe, iHighest(NULL, timeframe, MODE_HIGH, ShortPeriod, 1)) +
+                    iLow(NULL, timeframe, iLowest(NULL, timeframe, MODE_LOW, ShortPeriod, 1))) / 2;
+   
+   double atr = iATR(NULL, timeframe, ATR_Period, 0);
+   double threshold = atr * Mult_AB;
+   
+   if(currentClose > midLine + threshold)
+      return SIGNAL_LONG;
+   else if(currentClose < midLine - threshold)
+      return SIGNAL_SHORT;
+      
+   return SIGNAL_HOLD;
+}
+
+//+------------------------------------------------------------------+
+//| Donchian Channel Sinyali Hesaplama                                |
+//+------------------------------------------------------------------+
+int CalculateDCSignal(int timeframe, int period)
+{   
+   if(iVolume(NULL, timeframe, 0) > 1)
+      return LastDCSignal[TimeFrameIndex(timeframe)];
+      
+   double currentClose = iClose(NULL, timeframe, 0);
+   double previousClose = iClose(NULL, timeframe, 1);
+   
+   double currentUpperBand = iHigh(NULL, timeframe, iHighest(NULL, timeframe, MODE_HIGH, period, 1));
+   double currentLowerBand = iLow(NULL, timeframe, iLowest(NULL, timeframe, MODE_LOW, period, 1));
+   
+   double lastUpperBand, lastLowerBand;
+   if(!FindLastValidChannel(timeframe, period, lastUpperBand, lastLowerBand))
+   {
+      lastUpperBand = currentUpperBand;
+      lastLowerBand = currentLowerBand;
+   }
+   
+   double atr = iATR(NULL, timeframe, ATR_Period, 0);
+   double threshold = atr * Mult_AB;
+   
+   if(currentClose > lastUpperBand + threshold)
+   {
+      if(currentClose >= previousClose - threshold)
+         return SIGNAL_LONG;
+      return SIGNAL_HOLD;
+   }
+   
+   if(currentClose < lastLowerBand - threshold)
+   {
+      if(currentClose <= previousClose + threshold)
+         return SIGNAL_SHORT;
+      return SIGNAL_HOLD;
+   }
+   
+   return LastDCSignal[TimeFrameIndex(timeframe)];
+}
+
+//+------------------------------------------------------------------+
+//| Conqueror3 Sinyali Hesaplama                                      |
+//+------------------------------------------------------------------+
+int CalculateConqueror3Signal(int timeframe)
+{
+   double currentClose = iClose(NULL, timeframe, 1);
+   double currentMA = iMA(NULL, timeframe, MVA_Period, 0, MODE_SMA, PRICE_CLOSE, 1);
+   double oldMA = iMA(NULL, timeframe, MVA_Period, 0, MODE_SMA, PRICE_CLOSE, LookBack_Periods + 1);
+   double oldClose = iClose(NULL, timeframe, LookBack_Close + 1);
+   
+   double atr = iATR(NULL, timeframe, ATR_Period, 0);
+   double threshold_AB = atr * Mult_AB;
+   double threshold_BC = atr * Mult_BC;
+   double threshold_AD = atr * Mult_AD;
+   
+   double diffCloseMA = currentClose - currentMA;
+   double diffMAs = currentMA - oldMA;
+   double diffCloses = currentClose - oldClose;
+   
+   if(diffCloseMA > threshold_AB && diffMAs > threshold_BC && diffCloses > threshold_AD)
+      return SIGNAL_LONG;
+   
+   if(diffCloseMA < -threshold_AB && diffMAs < -threshold_BC && diffCloses < -threshold_AD)
+      return SIGNAL_SHORT;
+   
+   return SIGNAL_HOLD;
+}
+
+//+------------------------------------------------------------------+
+//| Conqueror4 Sinyali Hesaplama                                      |
+//+------------------------------------------------------------------+
+int CalculateConqueror4Signal(int timeframe)
+{
+   double MA0 = iMA(NULL, timeframe, Con4_MVA_Period, 0, MODE_SMA, PRICE_CLOSE, 0);
+   double MA1 = iMA(NULL, timeframe, Con4_MVA_Period, 0, MODE_SMA, PRICE_CLOSE, Range_Period1);
+   double Close0 = iClose(NULL, timeframe, 0);
+   double CloseOld = iClose(NULL, timeframe, Range_Period2);
+   
+   double atr = iATR(NULL, timeframe, ATR_Period, 0);
+   double threshold_AB = atr * Mult_AB;
+   double threshold_BC = atr * Mult_BC;
+   double threshold_AD = atr * Mult_AD;
+   
+   if(Close0 > MA0 + threshold_AB && MA0 > MA1 + threshold_BC && Close0 > CloseOld + threshold_AD)
+      return SIGNAL_LONG;
+   
+   if(Close0 < MA0 - threshold_AB && MA0 < MA1 - threshold_BC && Close0 < CloseOld - threshold_AD)
+      return SIGNAL_SHORT;
+   
+   return SIGNAL_HOLD;
+}
+
+//+------------------------------------------------------------------+
+//| FindLastValidChannel fonksiyonu (değişiklik yok)                  |
+//+------------------------------------------------------------------+
+bool FindLastValidChannel(int timeframe, int period, double &lastUpperBand, double &lastLowerBand)
+{
+   int minBarsForChannel = 3;
+   int totalBars = iBars(NULL, timeframe);
+   
+   double tempUpper, tempLower;
+   int consecutiveBars = 0;
+   
+   for(int i = period; i < totalBars-period; i++)
+   {
+      tempUpper = iHigh(NULL, timeframe, iHighest(NULL, timeframe, MODE_HIGH, period, i));
+      tempLower = iLow(NULL, timeframe, iLowest(NULL, timeframe, MODE_LOW, period, i));
+      
+      if(consecutiveBars == 0)
+      {
+         lastUpperBand = tempUpper;
+         lastLowerBand = tempLower;
+         consecutiveBars++;
+      }
+      else if(MathAbs(tempUpper - lastUpperBand) < Point && MathAbs(tempLower - lastLowerBand) < Point)
+      {
+         consecutiveBars++;
+         if(consecutiveBars >= minBarsForChannel)
+            return true;
+      }
+      else
+      {
+         consecutiveBars = 0;
+      }
+   }
+   return false;
+}
+
+
