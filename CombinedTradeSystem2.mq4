@@ -110,11 +110,12 @@ bool hasUpcomingNews = false;
 double currentATR = 0;
 double currentSpread = 0;
 
-//+------------------------------------------------------------------+
 //| Custom indicator initialization function                           |
 //+------------------------------------------------------------------+
 int init()
 {
+   Print("CombinedTradeSystem2 başlatılıyor...");
+   
    // Timeframe dizilerini doldur
    TimeFrames[0] = PERIOD_W1;
    TimeFrames[1] = PERIOD_D1;
@@ -152,9 +153,11 @@ int init()
    SetIndexBuffer(6, ADXBuffer);
    SetIndexBuffer(7, ADXPlusBuffer);
    
+   EventSetTimer(60);
+   Print("Timer ayarlandı");
+   
    return(INIT_SUCCEEDED);
 }
-
 //+------------------------------------------------------------------+
 //| Custom indicator deinitialization function                         |
 //+------------------------------------------------------------------+
