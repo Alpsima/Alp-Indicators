@@ -214,48 +214,83 @@ void GetSymbolCurrencies()
 //+------------------------------------------------------------------+
 bool ReadNewsFile()
 {
+   Print("Haber dosyası okuma başladı");
    ArrayResize(activeNews, 0);
    
    string filename = NewsFile;
+   Print("Dosya yolu: ", filename);
+   
    int handle = FileOpen(filename, FILE_READ|FILE_CSV|FILE_ANSI, ",");
    if(handle == INVALID_HANDLE)
    {
-      Print("Haber dosyası açılamadı: ", filename);
+      Print("Haber dosyası açılamadı: ", filename, " - Hata kodu: ", GetLastError());
       return false;
    }
    
+   Print("Dosya başarıyla açıldı");
    datetime currentTime = TimeCurrent();
+   Print("Mevcut zaman: ", TimeToString(currentTime));
    
    // Başlık satırını atla
-   if(FileIsEnding(handle)) { FileClose(handle); return false; }
+   if(FileIsEnding(handle)) 
+   { 
+      Print("Dosya boş");
+      FileClose(handle); 
+      return false; 
+   }
    FileReadString(handle);
    
    while(!FileIsEnding(handle))
    {
-      // CSV formatı: Date,Time,Currency,Event,Impact
       string dateStr = FileReadString(handle);
       string timeStr = FileReadString(handle);
       string currency = FileReadString(handle);
       string event = FileReadString(handle);
       string impact = FileReadString(handle);
       
-      // Tarihi datetime'a çevir
+      Print("Okunan haber: ", dateStr, " ", timeStr, " ", currency, " ", event, " ", impact);
+      
       datetime newsTime = StrToTime(dateStr + " " + timeStr);
+      Print("Çevrilen haber zamanı: ", TimeToString(newsTime));
       
       // Süresi dolmuş haberleri atla
-      if(newsTime < currentTime - NewsAfterMinutes * 60) continue;
+      if(newsTime < currentTime - NewsAfterMinutes * 60) 
+      {
+         Print("Haber süresi dolmuş: ", TimeToString(newsTime));
+         continue;
+      }
       
       // Gelecek haberleri kontrol et
-      if(newsTime > currentTime + 24 * 60 * 60) continue;
+      if(newsTime > currentTime + 24 * 60 * 60) 
+      {
+         Print("Haber 24 saatten uzakta: ", TimeToString(newsTime));
+         continue;
+      }
       
       // Etki seviyesi kontrolü
-      if(impact == "High" && !FilterHighImpact) continue;
-      if(impact == "Medium" && !FilterMediumImpact) continue;
-      if(impact == "Low" && !FilterLowImpact) continue;
+      if(impact == "High" && !FilterHighImpact) 
+      {
+         Print("Yüksek etkili haber filtre edildi");
+         continue;
+      }
+      if(impact == "Medium" && !FilterMediumImpact) 
+      {
+         Print("Orta etkili haber filtre edildi");
+         continue;
+      }
+      if(impact == "Low" && !FilterLowImpact) 
+      {
+         Print("Düşük etkili haber filtre edildi");
+         continue;
+      }
       
       // Para birimi kontrolü
       if(currency != currentSymbolCurrencies[0] && 
-         currency != currentSymbolCurrencies[1]) continue;
+         currency != currentSymbolCurrencies[1]) 
+      {
+         Print("Para birimi uyumsuz: ", currency);
+         continue;
+      }
       
       // Haber bilgilerini kaydet
       int idx = ArraySize(activeNews);
@@ -265,8 +300,11 @@ bool ReadNewsFile()
       activeNews[idx].event = event;
       activeNews[idx].impact = impact;
       activeNews[idx].minutesUntil = (int)((newsTime - currentTime) / 60);
+      
+      Print("Haber kaydedildi: ", currency, " ", event, " - Kalan süre: ", activeNews[idx].minutesUntil, " dakika");
    }
    
+   Print("Toplam ", ArraySize(activeNews), " aktif haber bulundu");
    FileClose(handle);
    return true;
 }
