@@ -499,11 +499,9 @@ void CreateTable(string symbol, int baseX, int baseY)
    double longPercent = 0, shortPercent = 0, holdPercent = 0;
    CalculateWeightedSignalDistribution(symbol, longPercent, shortPercent, holdPercent);
    
-   string distribution = DistributionPrefix + 
-                        "L(" + DoubleToStr(MathRound(longPercent), DistributionPrecision) + ")" + 
-                        StringRepeat(" ", DistributionSpacing) +
-                        "S(" + DoubleToStr(MathRound(shortPercent), DistributionPrecision) + ")" +
-                        StringRepeat(" ", DistributionSpacing) +
+  string distribution = DistributionPrefix + 
+                        "L(" + DoubleToStr(MathRound(longPercent), DistributionPrecision) + ")  " +  // İki boşluk ekledik
+                        "S(" + DoubleToStr(MathRound(shortPercent), DistributionPrecision) + ")  " +  // İki boşluk ekledik
                         "H(" + DoubleToStr(MathRound(holdPercent), DistributionPrecision) + ")";
                         
    CreateLabel(symbol + "_Distribution", distribution,
