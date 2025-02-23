@@ -494,4 +494,276 @@ bool FindLastValidChannel(int timeframe, int period, double &lastUpperBand, doub
    return false;
 }
 
+//+------------------------------------------------------------------+
+//| Signal evaluation functions                                       |
+//+------------------------------------------------------------------+
+int EvaluateSignal1(int dcoSignal, int con3Signal, int con4Signal)
+{
+   if(dcoSignal == SIGNAL_LONG && con3Signal == SIGNAL_LONG && con4Signal == SIGNAL_LONG)
+      return SIGNAL_LONG;
+   
+   if(dcoSignal == SIGNAL_SHORT && con3Signal == SIGNAL_SHORT && con4Signal == SIGNAL_SHORT)
+      return SIGNAL_SHORT;
+   
+   return SIGNAL_HOLD;
+}
+
+int EvaluateSignal2(int dcSignal, int dcoSignal, int con3Signal, int con4Signal)
+{
+   if(dcSignal == SIGNAL_LONG && dcoSignal == SIGNAL_LONG && 
+      con3Signal == SIGNAL_LONG && con4Signal == SIGNAL_LONG)
+      return SIGNAL_LONG;
+   
+   if(dcSignal == SIGNAL_SHORT && dcoSignal == SIGNAL_SHORT && 
+      con3Signal == SIGNAL_SHORT && con4Signal == SIGNAL_SHORT)
+      return SIGNAL_SHORT;
+   
+   return SIGNAL_HOLD;
+}
+
+//+------------------------------------------------------------------+
+//| Helper functions                                                   |
+//+------------------------------------------------------------------+
+string TimeframeToString(int timeframe)
+{
+   switch(timeframe)
+   {
+      case PERIOD_M1:  return "M1";
+      case PERIOD_M5:  return "M5";
+      case PERIOD_M15: return "M15";
+      case PERIOD_M30: return "M30";
+      case PERIOD_H1:  return "H1";
+      case PERIOD_H4:  return "H4";
+      case PERIOD_D1:  return "D1";
+      case PERIOD_W1:  return "W1";
+      case PERIOD_MN1: return "MN";
+      default: return "Unknown";
+   }
+}
+
+int TimeFrameIndex(int timeframe)
+{
+   for(int i = 0; i < ArraySize(TimeFrames); i++)
+   {
+      if(TimeFrames[i] == timeframe)
+         return i;
+   }
+   return 0;
+}
+
+color GetSignalColor(int signal)
+{
+   if(signal == SIGNAL_LONG) return LongColor;
+   if(signal == SIGNAL_SHORT) return ShortColor;
+   return HoldColor;
+}
+
+void CreateCell(string name, int x, int y, string text, color bgColor, color txtColor)
+{
+   string objName = IndicatorObjPrefix + name;
+   
+   if(ObjectFind(objName + "BG") < 0)
+      ObjectCreate(0, objName + "BG", OBJ_RECTANGLE_LABEL, 0, 0, 0);
+   
+   ObjectSet(objName + "BG", OBJPROP_XDISTANCE, x);
+   ObjectSet(objName + "BG", OBJPROP_YDISTANCE, y);
+   ObjectSet(objName + "BG", OBJPROP_XSIZE, ColumnWidth);
+   ObjectSet(objName + "BG", OBJPROP_YSIZE, RowHeight);
+   ObjectSet(objName + "BG", OBJPROP_BGCOLOR, bgColor);
+   ObjectSet(objName + "BG", OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   ObjectSet(objName + "BG", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+   
+   if(ObjectFind(objName + "TEXT") < 0)
+      ObjectCreate(0, objName + "TEXT", OBJ_LABEL, 0, 0, 0);
+   
+   ObjectSet(objName + "TEXT", OBJPROP_XDISTANCE, x + 5);
+   ObjectSet(objName + "TEXT", OBJPROP_YDISTANCE, y + 4);
+   ObjectSetText(objName + "TEXT", text, FontSize, FontName, txtColor);
+   ObjectSet(objName + "TEXT", OBJPROP_CORNER, CORNER_LEFT_UPPER);
+}
+
+//+------------------------------------------------------------------+
+//| Table creation functions                                           |
+//+------------------------------------------------------------------+
+void CreateMainTable()
+{
+   string headers[9] = {"TF", "DC", "DCO", "CON3", "CON4", "Signal1", "Signal2", "ADX", "ATR"};
+   int totalColumns = ArraySize(headers);
+   
+   for(int col = 0; col < totalColumns; col++)
+   {
+      CreateCell("Header_" + IntegerToString(col), 
+                TableX + col * ColumnWidth, 
+                TableY, 
+                headers[col], 
+                HeaderColor, 
+                TextColor);
+   }
+   
+   for(int row = 0; row < ArraySize(TimeFrames); row++)
+   {
+      CreateCell("TF_" + TimeFrameNames[row], 
+                TableX, 
+                TableY + (row + 1) * RowHeight,
+                TimeFrameNames[row],
+                HeaderColor,
+                TextColor);
+                
+      for(int col = 1; col < totalColumns; col++)
+      {
+         CreateCell("Cell_" + TimeFrameNames[row] + "_" + IntegerToString(col),
+                   TableX + col * ColumnWidth,
+                   TableY + (row + 1) * RowHeight,
+                   "",
+                   clrWhite,
+                   clrBlack);
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Alert functions                                                    |
+//+------------------------------------------------------------------+
+void CheckAndAlert(string timeFrameName, int tfIndex, int dcSignal, int dcoSignal, 
+                  int con3Signal, int con4Signal)
+{
+   if(iVolume(NULL, TimeFrames[tfIndex], 0) > 1) return;
+   
+   static datetime lastGlobalAlertTime = 0;
+   datetime currentTime = TimeCurrent();
+   
+   if(currentTime - lastGlobalAlertTime < 300) return;
+   
+   if(LastDCSignal[tfIndex] == dcSignal && 
+      currentTime - LastAlertTime[tfIndex] < PeriodSeconds(TimeFrames[tfIndex])) 
+      return;
+   
+   string alertMessage = "";
+   
+   // Yaklaşan haber kontrolü
+   if(UseNewsFilter && hasUpcomingNews)
+   {
+      return; // Yaklaşan haber varsa alert verme
+   }
+   
+   // Signal2'ye göre alert (tüm sinyaller uyumlu olmalı)
+   if(dcSignal == SIGNAL_LONG && dcoSignal == SIGNAL_LONG && 
+      con3Signal == SIGNAL_LONG && con4Signal == SIGNAL_LONG)
+   {
+      alertMessage = Symbol() + " - " + timeFrameName + " - LONG Signal: Perfect Storm";
+   }
+   else if(dcSignal == SIGNAL_SHORT && dcoSignal == SIGNAL_SHORT && 
+           con3Signal == SIGNAL_SHORT && con4Signal == SIGNAL_SHORT)
+   {
+      alertMessage = Symbol() + " - " + timeFrameName + " - SHORT Signal: Perfect Storm";
+   }
+   
+   if(StringLen(alertMessage) > 0)
+   {
+      if(EnableSoundAlert) Alert(alertMessage);
+      if(EnablePopupAlert) MessageBox(alertMessage, "Signal Alert", MB_OK|MB_ICONINFORMATION);
+      
+      lastGlobalAlertTime = currentTime;
+      LastAlertTime[tfIndex] = currentTime;
+      LastDCSignal[tfIndex] = dcSignal;
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Custom indicator iteration function                                |
+//+------------------------------------------------------------------+
+int start()
+{
+   // Haber verilerini güncelle
+   if(UseNewsFilter)
+   {
+      static datetime lastNewsCheck = 0;
+      datetime currentTime = TimeCurrent();
+      
+      if(currentTime - lastNewsCheck > 300) // Her 5 dakikada bir güncelle
+      {
+         ReadNewsFile();
+         lastNewsCheck = currentTime;
+      }
+   }
+   
+   // Risk tablosunu güncelle
+   UpdateRiskTable();
+   
+   // Ana sinyal tablosunu oluştur
+   CreateMainTable();
+   
+   for(int i = 0; i < ArraySize(TimeFrames); i++)
+   {
+      int timeframe = TimeFrames[i];
+      
+      // DC sinyallerini hesapla
+      int dcSignalShort = CalculateDCSignal(timeframe, ShortPeriod);
+      int dcSignalLong = CalculateDCSignal(timeframe, LongPeriod);
+
+      // DC sinyal durumunu belirle
+      int dcSignal;
+      if(dcSignalShort == SIGNAL_LONG && dcSignalLong == SIGNAL_LONG)
+         dcSignal = SIGNAL_LONG;
+      else if(dcSignalShort == SIGNAL_SHORT && dcSignalLong == SIGNAL_SHORT)
+         dcSignal = SIGNAL_SHORT;
+      else
+         dcSignal = SIGNAL_HOLD;
+      
+      // Diğer sinyalleri hesapla
+      int dcoSignal = CalculateDCOSignal(timeframe);
+      int con3Signal = CalculateConqueror3Signal(timeframe);
+      int con4Signal = CalculateConqueror4Signal(timeframe);
+      
+      // Signal1 ve Signal2'yi hesapla
+      int signal1 = EvaluateSignal1(dcoSignal, con3Signal, con4Signal);
+      int signal2 = EvaluateSignal2(dcSignal, dcoSignal, con3Signal, con4Signal);
+      
+      // Alert kontrolü
+      CheckAndAlert(TimeFrameNames[i], i, dcSignal, dcoSignal, con3Signal, con4Signal);
+      
+      // İndikatör değerlerini hesapla
+      double atr = iATR(NULL, timeframe, ATR_Period, 0);
+      double adx = iADX(NULL, timeframe, 14, PRICE_CLOSE, MODE_MAIN, 0);
+      
+      // Sinyal renklerini belirle
+      color dcColor = GetSignalColor(dcSignal);
+      color dcoColor = GetSignalColor(dcoSignal);
+      color con3Color = GetSignalColor(con3Signal);
+      color con4Color = GetSignalColor(con4Signal);
+      color signal1Color = GetSignalColor(signal1);
+      color signal2Color = GetSignalColor(signal2);
+      
+      // ADX renk kontrolü
+      color adxColor = clrWhite;
+      if(adx >= 27) adxColor = LongColor;
+      else if(adx >= 20) adxColor = HoldColor;
+      else adxColor = ShortColor;
+      
+      // Tablo hücrelerini güncelle
+      int rowY = TableY + (i + 1) * RowHeight;
+      
+      // Signal metinlerini belirle
+      string dcText = (dcSignal == SIGNAL_LONG) ? "L" : (dcSignal == SIGNAL_SHORT) ? "S" : "H";
+      string dcoText = (dcoSignal == SIGNAL_LONG) ? "L" : (dcoSignal == SIGNAL_SHORT) ? "S" : "H";
+      string con3Text = (con3Signal == SIGNAL_LONG) ? "L" : (con3Signal == SIGNAL_SHORT) ? "S" : "H";
+      string con4Text = (con4Signal == SIGNAL_LONG) ? "L" : (con4Signal == SIGNAL_SHORT) ? "S" : "H";
+      string signal1Text = (signal1 == SIGNAL_LONG) ? "L" : (signal1 == SIGNAL_SHORT) ? "S" : "H";
+      string signal2Text = (signal2 == SIGNAL_LONG) ? "L" : (signal2 == SIGNAL_SHORT) ? "S" : "H";
+      
+      // Hücreleri güncelle
+      CreateCell("Cell_" + TimeFrameNames[i] + "_1", TableX + ColumnWidth, rowY, dcText, dcColor, TextColor);
+      CreateCell("Cell_" + TimeFrameNames[i] + "_2", TableX + 2 * ColumnWidth, rowY, dcoText, dcoColor, TextColor);
+      CreateCell("Cell_" + TimeFrameNames[i] + "_3", TableX + 3 * ColumnWidth, rowY, con3Text, con3Color, TextColor);
+      CreateCell("Cell_" + TimeFrameNames[i] + "_4", TableX + 4 * ColumnWidth, rowY, con4Text, con4Color, TextColor);
+      CreateCell("Cell_" + TimeFrameNames[i] + "_5", TableX + 5 * ColumnWidth, rowY, signal1Text, signal1Color, TextColor);
+      CreateCell("Cell_" + TimeFrameNames[i] + "_6", TableX + 6 * ColumnWidth, rowY, signal2Text, signal2Color, TextColor);
+      CreateCell("Cell_" + TimeFrameNames[i] + "_7", TableX + 7 * ColumnWidth, rowY, DoubleToStr(adx, 1), adxColor, TextColor);
+      CreateCell("Cell_" + TimeFrameNames[i] + "_8", TableX + 8 * ColumnWidth, rowY, DoubleToStr(atr, Digits), ATRColumnColor, TextColor);
+   }
+   
+   return(0);
+}
+//+------------------------------------------------------------------+
+
 
