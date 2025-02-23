@@ -15,37 +15,53 @@ extern color      ShortColor       = clrCrimson;       // Short Sinyal Rengi
 extern color      HoldColor        = clrRoyalBlue;     // Hold Sinyal Rengi
 extern string     FontName         = "Arial";      // Yazı Tipi
 extern int        FontSize         = 7;            // Yazı Boyutu
+extern int        DistributionFontSize = 8;        // Dağılım Yazı Boyutu
+extern color      DistributionTextColor = clrWhite; // Dağılım Yazı Rengi
 extern int        ColumnWidth      = 50;           // Kolon Genişliği
 extern int        RowHeight        = 18;           // Satır Yüksekliği
 extern int        TableSpacingX    = 100;          // Tablolar arası yatay boşluk
 extern int        TableSpacingY    = 80;           // Tablolar arası dikey boşluk
 extern int        TablesPerRow     = 4;            // Her satırdaki tablo sayısı
-extern int        TableX          = 200;           // İlk tablo X pozisyonu
-extern int        TableY          = 100;           // İlk tablo Y pozisyonu
+extern int        TableX          = 75;            // İlk tablo X pozisyonu
+extern int        TableY          = 50;            // İlk tablo Y pozisyonu
 extern int        TitleFontSize    = 10;           // Başlık yazı boyutu
 extern int        TitleSpacing     = 40;           // Başlık-tablo arası mesafe
-extern color      BackgroundColor  = C'28,28,28';  // Arka plan rengi
+extern color      BackgroundColor  = clrWhite;     // Arka plan rengi
 extern color      TitleColor       = clrYellow;    // Başlık rengi
 
-// İndikatör Ayarları (CombinedTradeSystem'den)
+// ATR Bazlı Eşik Ayarları
+extern string     ATRSettings       = "===== ATR Ayarları =====";
+extern int        ATR_Period        = 14;    // ATR Periyodu
+extern double     Mult_AB           = 0.5;   // (A-B) için ATR çarpanı
+extern double     Mult_BC           = 0.4;   // (B-C) için ATR çarpanı
+extern double     Mult_AD           = 0.6;   // (A-D) için ATR çarpanı
+
+// İndikatör Ayarları
+extern string     IndicatorSettings = "===== İndikatör Ayarları =====";
 extern int        ShortPeriod      = 20;    // Kısa Donchian Periyodu
 extern int        LongPeriod       = 55;    // Uzun Donchian Periyodu
 extern int        MVA_Period       = 10;    // Moving Average periyodu
 extern int        LookBack_Periods = 20;    // MA karşılaştırma periyodu
 extern int        LookBack_Close   = 40;    // Kapanış karşılaştırma periyodu
 extern int        Con4_MVA_Period  = 10;    // Conqueror4 MA periyodu
-extern int        Range_Period1    = 20;    // Kısa dönem periyodu
+extern int        Range_Period1    = 25;    // Kısa dönem periyodu
 extern int        Range_Period2    = 55;    // Uzun dönem periyodu
 extern int        ADX_Period       = 14;    // ADX Periyodu
 extern double     ADX_Threshold    = 27.0;  // ADX Eşik Değeri
 
 // Timeframe Ağırlık Ayarları
+extern string     WeightSettings    = "===== Timeframe Ağırlıkları =====";
 extern double     Weight_W1        = 30.0;  // W1 Timeframe Ağırlığı (%)
 extern double     Weight_D1        = 25.0;  // D1 Timeframe Ağırlığı (%)
 extern double     Weight_H4        = 20.0;  // H4 Timeframe Ağırlığı (%)
 extern double     Weight_H1        = 15.0;  // H1 Timeframe Ağırlığı (%)
 extern double     Weight_M30       = 7.0;   // M30 Timeframe Ağırlığı (%)
 extern double     Weight_M15       = 3.0;   // M15 Timeframe Ağırlığı (%)
+
+// Dağılım Formatı Ayarları
+extern string     DistributionSettings = "===== Dağılım Formatı =====";
+extern int        DistributionPrecision = 0;    // Dağılım yüzde hassasiyeti
+extern string     DistributionPrefix = "D%: ";   // Dağılım başlık öneki
 
 // Sabitler
 #define SIGNAL_LONG    1
@@ -107,16 +123,112 @@ int CalculateDCOSignal(string symbol, int timeframe)
    double midLine = (iHigh(symbol, timeframe, iHighest(symbol, timeframe, MODE_HIGH, ShortPeriod, 1)) +
                     iLow(symbol, timeframe, iLowest(symbol, timeframe, MODE_LOW, ShortPeriod, 1))) / 2;
    
-   if(currentClose > midLine)
+   double atr = iATR(symbol, timeframe, ATR_Period, 0);
+   double threshold = atr * Mult_AB;
+   
+   if(currentClose > midLine + threshold)
       return SIGNAL_LONG;
-   else if(currentClose < midLine)
+   else if(currentClose < midLine - threshold)
       return SIGNAL_SHORT;
          
    return SIGNAL_HOLD;
 }
 
 //+------------------------------------------------------------------+
-//| Son geçerli kanalı bulma fonksiyonu                              |
+//| Donchian Channel Sinyali                                          |
+//+------------------------------------------------------------------+
+int CalculateDCSignal(string symbol, int timeframe)
+{   
+   if(iVolume(symbol, timeframe, 0) > 1)
+      return SIGNAL_HOLD;
+      
+   double currentClose = iClose(symbol, timeframe, 0);
+   double previousClose = iClose(symbol, timeframe, 1);
+   
+   double currentUpperBand = iHigh(symbol, timeframe, iHighest(symbol, timeframe, MODE_HIGH, ShortPeriod, 1));
+   double currentLowerBand = iLow(symbol, timeframe, iLowest(symbol, timeframe, MODE_LOW, ShortPeriod, 1));
+   
+   double lastUpperBand, lastLowerBand;
+   if(!FindLastValidChannel(symbol, timeframe, ShortPeriod, lastUpperBand, lastLowerBand))
+   {
+      lastUpperBand = currentUpperBand;
+      lastLowerBand = currentLowerBand;
+   }
+   
+   double atr = iATR(symbol, timeframe, ATR_Period, 0);
+   double threshold = atr * Mult_AB;
+   
+   if(currentClose > lastUpperBand + threshold)
+   {
+      if(currentClose >= previousClose - threshold)
+         return SIGNAL_LONG;
+      return SIGNAL_HOLD;
+   }
+   
+   if(currentClose < lastLowerBand - threshold)
+   {
+      if(currentClose <= previousClose + threshold)
+         return SIGNAL_SHORT;
+      return SIGNAL_HOLD;
+   }
+   
+   return SIGNAL_HOLD;
+}
+
+//+------------------------------------------------------------------+
+//| Conqueror3 Sinyali                                                |
+//+------------------------------------------------------------------+
+int CalculateConqueror3Signal(string symbol, int timeframe)
+{
+   double currentClose = iClose(symbol, timeframe, 1);
+   double currentMA = iMA(symbol, timeframe, MVA_Period, 0, MODE_SMA, PRICE_CLOSE, 1);
+   double oldMA = iMA(symbol, timeframe, MVA_Period, 0, MODE_SMA, PRICE_CLOSE, LookBack_Periods + 1);
+   double oldClose = iClose(symbol, timeframe, LookBack_Close + 1);
+   
+   double atr = iATR(symbol, timeframe, ATR_Period, 0);
+   double threshold_AB = atr * Mult_AB;
+   double threshold_BC = atr * Mult_BC;
+   double threshold_AD = atr * Mult_AD;
+   
+   double diffCloseMA = currentClose - currentMA;
+   double diffMAs = currentMA - oldMA;
+   double diffCloses = currentClose - oldClose;
+   
+   if(diffCloseMA > threshold_AB && diffMAs > threshold_BC && diffCloses > threshold_AD)
+      return SIGNAL_LONG;
+   
+   if(diffCloseMA < -threshold_AB && diffMAs < -threshold_BC && diffCloses < -threshold_AD)
+      return SIGNAL_SHORT;
+   
+   return SIGNAL_HOLD;
+}
+
+//+------------------------------------------------------------------+
+//| Conqueror4 Sinyali                                                |
+//+------------------------------------------------------------------+
+int CalculateConqueror4Signal(string symbol, int timeframe)
+{
+   double MA0 = iMA(symbol, timeframe, Con4_MVA_Period, 0, MODE_SMA, PRICE_CLOSE, 0);
+   double MA1 = iMA(symbol, timeframe, Con4_MVA_Period, 0, MODE_SMA, PRICE_CLOSE, Range_Period1);
+   double Close0 = iClose(symbol, timeframe, 0);
+   double CloseOld = iClose(symbol, timeframe, Range_Period2);
+   
+   double atr = iATR(symbol, timeframe, ATR_Period, 0);
+   double threshold_AB = atr * Mult_AB;
+   double threshold_BC = atr * Mult_BC;
+   double threshold_AD = atr * Mult_AD;
+   
+   if(Close0 > MA0 + threshold_AB && MA0 > MA1 + threshold_BC && Close0 > CloseOld + threshold_AD)
+      return SIGNAL_LONG;
+   
+   if(Close0 < MA0 - threshold_AB && MA0 < MA1 - threshold_BC && Close0 < CloseOld - threshold_AD)
+      return SIGNAL_SHORT;
+   
+   return SIGNAL_HOLD;
+}
+
+//+------------------------------------------------------------------+
+//| FindLastValidChannel fonksiyonu                                    |
 //+------------------------------------------------------------------+
 bool FindLastValidChannel(string symbol, int timeframe, int period, double &lastUpperBand, double &lastLowerBand)
 {
@@ -152,120 +264,6 @@ bool FindLastValidChannel(string symbol, int timeframe, int period, double &last
 }
 
 //+------------------------------------------------------------------+
-//| Donchian Channel Sinyali                                          |
-//+------------------------------------------------------------------+
-int CalculateDCSignal(string symbol, int timeframe)
-{   
-   if(iVolume(symbol, timeframe, 0) > 1)
-      return SIGNAL_HOLD;
-      
-   double currentClose = iClose(symbol, timeframe, 0);
-   double previousClose = iClose(symbol, timeframe, 1);
-   
-   double currentUpperBand = iHigh(symbol, timeframe, iHighest(symbol, timeframe, MODE_HIGH, ShortPeriod, 1));
-   double currentLowerBand = iLow(symbol, timeframe, iLowest(symbol, timeframe, MODE_LOW, ShortPeriod, 1));
-   
-   double lastUpperBand, lastLowerBand;
-   if(!FindLastValidChannel(symbol, timeframe, ShortPeriod, lastUpperBand, lastLowerBand))
-   {
-      lastUpperBand = currentUpperBand;
-      lastLowerBand = currentLowerBand;
-   }
-   
-   double pipValue = Point * 10;  // 4 pip threshold için
-   
-   if(currentClose > lastUpperBand)
-   {
-      if(currentClose >= previousClose - pipValue)
-         return SIGNAL_LONG;
-      return SIGNAL_HOLD;
-   }
-   
-   if(currentClose < lastLowerBand)
-   {
-      if(currentClose <= previousClose + pipValue)
-         return SIGNAL_SHORT;
-      return SIGNAL_HOLD;
-   }
-   
-   if(currentClose > currentUpperBand - pipValue || currentClose < currentLowerBand + pipValue)
-      return SIGNAL_HOLD;
-      
-   if(currentClose > lastUpperBand - pipValue)
-   {
-      if(currentClose >= previousClose)
-         return SIGNAL_LONG;
-      return SIGNAL_HOLD;
-   }
-   
-   if(currentClose < lastLowerBand + pipValue)
-   {
-      if(currentClose <= previousClose)
-         return SIGNAL_SHORT;
-      return SIGNAL_HOLD;
-   }
-   
-   return SIGNAL_HOLD;
-}
-
-//+------------------------------------------------------------------+
-//| Conqueror3 Sinyali                                                |
-//+------------------------------------------------------------------+
-int CalculateConqueror3Signal(string symbol, int timeframe)
-{
-   double currentClose = iClose(symbol, timeframe, 1);  // Son kapanmış mum
-   double currentMA = iMA(symbol, timeframe, MVA_Period, 0, MODE_SMA, PRICE_CLOSE, 1);
-   double oldMA = iMA(symbol, timeframe, MVA_Period, 0, MODE_SMA, PRICE_CLOSE, LookBack_Periods + 1);
-   double oldClose = iClose(symbol, timeframe, LookBack_Close + 1);
-   
-   double diffCloseMA = currentClose - currentMA;
-   double diffMAs = currentMA - oldMA;
-   double diffCloses = currentClose - oldClose;
-   
-   if(diffCloseMA > 0 && diffMAs > 0 && diffCloses > 0)
-      return SIGNAL_LONG;
-   
-   if(diffCloseMA < 0 && diffMAs < 0 && diffCloses < 0)
-      return SIGNAL_SHORT;
-   
-   return SIGNAL_HOLD;
-}
-
-//+------------------------------------------------------------------+
-//| Conqueror4 Sinyali                                                |
-//+------------------------------------------------------------------+
-int CalculateConqueror4Signal(string symbol, int timeframe)
-{
-   // Mevcut değerler
-   double Close0 = iClose(symbol, timeframe, 0);  // Devam eden mum
-   double MA_Current = iMA(symbol, timeframe, Con4_MVA_Period, 0, MODE_SMA, PRICE_CLOSE, 0);
-   
-   // Range_Period1 önceki MA
-   double MA_Old = iMA(symbol, timeframe, Con4_MVA_Period, 0, MODE_SMA, PRICE_CLOSE, Range_Period1);
-   
-   // Range_Period2 önceki kapanış
-   double Close_Old = iClose(symbol, timeframe, Range_Period2);
-   
-   // LONG sinyali için tüm şartların sağlanması gerekiyor
-   if(Close0 > MA_Current &&      // Fiyat MA'nın üstünde
-      MA_Current > MA_Old &&      // Mevcut MA eski MA'nın üstünde
-      Close0 > Close_Old)         // Fiyat eski kapanışın üstünde
-   {
-      return SIGNAL_LONG;
-   }
-   
-   // SHORT sinyali için tüm şartların sağlanması gerekiyor
-   if(Close0 < MA_Current &&      // Fiyat MA'nın altında
-      MA_Current < MA_Old &&      // Mevcut MA eski MA'nın altında
-      Close0 < Close_Old)         // Fiyat eski kapanışın altında
-   {
-      return SIGNAL_SHORT;
-   }
-   
-   return SIGNAL_HOLD;
-}
-
-//+------------------------------------------------------------------+
 //| Signal1 Değerlendirme (DCO, CON3, CON4)                          |
 //+------------------------------------------------------------------+
 int EvaluateSignal1(int dcoSignal, int con3Signal, int con4Signal)
@@ -293,129 +291,6 @@ int EvaluateSignal2(int dcSignal, int dcoSignal, int con3Signal, int con4Signal)
       return SIGNAL_SHORT;
    
    return SIGNAL_HOLD;
-}
-
-//+------------------------------------------------------------------+
-//| Sinyal durumunu kontrol et                                        |
-//+------------------------------------------------------------------+
-void GetSignalState(string symbol, int timeframe, int &signals[])
-{
-   ArrayResize(signals, 7);
-   
-   // DC Sinyali
-   signals[0] = CalculateDCSignal(symbol, timeframe);
-   
-   // DCO Sinyali
-   signals[1] = CalculateDCOSignal(symbol, timeframe);
-   
-   // CON3 Sinyali
-   signals[2] = CalculateConqueror3Signal(symbol, timeframe);
-
-   // CON4 Sinyali
-   signals[3] = CalculateConqueror4Signal(symbol, timeframe);
-   
-   // Signal1 (DCO, CON3, CON4)
-   signals[4] = EvaluateSignal1(signals[1], signals[2], signals[3]);
-   
-   // Signal2 (DC, DCO, CON3, CON4)
-   signals[5] = EvaluateSignal2(signals[0], signals[1], signals[2], signals[3]);
-   
-   // ADX - Doğrudan iADX değerini alıyoruz
-   signals[6] = (int)(iADX(symbol, timeframe, ADX_Period, PRICE_CLOSE, MODE_MAIN, 0) * 100);  // 100 ile çarpıp tam sayı yapıyoruz
-}
-
-//+------------------------------------------------------------------+
-//| Ağırlıklı sinyal dağılımını hesapla                              |
-//+------------------------------------------------------------------+
-void CalculateWeightedSignalDistribution(string symbol, double &longPercent, double &shortPercent, double &holdPercent)
-{
-    double weights[6];
-    weights[0] = Weight_W1;
-    weights[1] = Weight_D1;
-    weights[2] = Weight_H4;
-    weights[3] = Weight_H1;
-    weights[4] = Weight_M30;
-    weights[5] = Weight_M15;
-    
-    double weightedLong = 0, weightedShort = 0, weightedHold = 0;
-    
-    // Her timeframe için ağırlıklı hesaplama
-    for(int tf = 0; tf < ArraySize(TimeframeList); tf++)
-    {
-        int signals[];
-        GetSignalState(symbol, TimeframeValues[tf], signals);
-        
-        // Sadece DCO, CON3 ve CON4 sinyalleri için (index 1,2,3)
-        for(int i = 1; i <= 3; i++)
-        {
-            double weight = weights[tf] / 3.0;  // Her indikatör için ağırlığı 3'e böl
-            
-            if(signals[i] == SIGNAL_LONG) weightedLong += weight;
-            else if(signals[i] == SIGNAL_SHORT) weightedShort += weight;
-            else weightedHold += weight;
-        }
-    }
-    
-    // Sonuçları ata
-    longPercent = weightedLong;
-    shortPercent = weightedShort;
-    holdPercent = weightedHold;
-}
-
-//+------------------------------------------------------------------+
-//| Aktif grafikleri tespit et                                        |
-//+------------------------------------------------------------------+
-void DetectActiveCharts()
-{
-   ArrayResize(ActiveSymbols, 0);
-   int symbolCount = 0;
-   
-   long chartID = ChartFirst();
-   while(chartID >= 0)
-   {
-      string symbol = ChartSymbol(chartID);
-      
-      // CombinedTradeSystem yüklenmiş mi kontrol et
-      if(HasCombinedTradeSystem(symbol, chartID))
-      {
-         // Sembol zaten listeye eklendi mi kontrol et
-         bool exists = false;
-         for(int i = 0; i < ArraySize(ActiveSymbols); i++)
-         {
-            if(ActiveSymbols[i] == symbol)
-            {
-               exists = true;
-               break;
-            }
-         }
-         
-         // Yeni sembol ise listeye ekle
-         if(!exists)
-         {
-            ArrayResize(ActiveSymbols, symbolCount + 1);
-            ActiveSymbols[symbolCount] = symbol;
-            symbolCount++;
-         }
-      }
-      
-      chartID = ChartNext(chartID);
-   }
-}
-
-//+------------------------------------------------------------------+
-//| CombinedTradeSystem kontrolü                                      |
-//+------------------------------------------------------------------+
-bool HasCombinedTradeSystem(string symbol, long chartID)
-{
-   // Grafikteki indikatörleri kontrol et
-   int total = ChartIndicatorsTotal(chartID, 0);
-   for(int i = 0; i < total; i++)
-   {
-      string indName = ChartIndicatorName(chartID, 0, i);
-      if(StringFind(indName, "CombinedTradeSystem") >= 0)
-         return true;
-   }
-   return false;
 }
 
 //+------------------------------------------------------------------+
@@ -500,13 +375,14 @@ void CreateTable(string symbol, int baseX, int baseY)
    double longPercent = 0, shortPercent = 0, holdPercent = 0;
    CalculateWeightedSignalDistribution(symbol, longPercent, shortPercent, holdPercent);
    
-   string distribution = "D%: L(" + DoubleToStr(longPercent, 1) + 
-                        ") S(" + DoubleToStr(shortPercent, 1) + 
-                        ") H(" + DoubleToStr(holdPercent, 1) + ")";
+   string distribution = DistributionPrefix + 
+                        "L(" + DoubleToStr(MathRound(longPercent), DistributionPrecision) + ")  " + 
+                        "S(" + DoubleToStr(MathRound(shortPercent), DistributionPrecision) + ")  " + 
+                        "H(" + DoubleToStr(MathRound(holdPercent), DistributionPrecision) + ")";
                         
    CreateLabel(symbol + "_Distribution", distribution,
                baseX, baseY + (ArraySize(TimeframeList) + 2) * RowHeight,
-               FontSize, TextColor);
+               DistributionFontSize, DistributionTextColor);
 }
 
 //+------------------------------------------------------------------+
@@ -552,6 +428,100 @@ void CreateLabel(string name, string text, int x, int y, int fontSize, color tex
 }
 
 //+------------------------------------------------------------------+
+//| Aktif grafikleri tespit et                                        |
+//+------------------------------------------------------------------+
+void DetectActiveCharts()
+{
+   ArrayResize(ActiveSymbols, 0);
+   int symbolCount = 0;
+   
+   long chartID = ChartFirst();
+   while(chartID >= 0)
+   {
+      string symbol = ChartSymbol(chartID);
+      
+      // CombinedTradeSystem yüklenmiş mi kontrol et
+      if(HasCombinedTradeSystem(symbol, chartID))
+      {
+         // Sembol zaten listeye eklendi mi kontrol et
+         bool exists = false;
+         for(int i = 0; i < ArraySize(ActiveSymbols); i++)
+         {
+            if(ActiveSymbols[i] == symbol)
+            {
+               exists = true;
+               break;
+            }
+         }
+         
+         // Yeni sembol ise listeye ekle
+         if(!exists)
+         {
+            ArrayResize(ActiveSymbols, symbolCount + 1);
+            ActiveSymbols[symbolCount] = symbol;
+            symbolCount++;
+         }
+      }
+      
+      chartID = ChartNext(chartID);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| CombinedTradeSystem kontrolü                                      |
+//+------------------------------------------------------------------+
+bool HasCombinedTradeSystem(string symbol, long chartID)
+{
+   // Grafikteki indikatörleri kontrol et
+   int total = ChartIndicatorsTotal(chartID, 0);
+   for(int i = 0; i < total; i++)
+   {
+      string indName = ChartIndicatorName(chartID, 0, i);
+      if(StringFind(indName, "CombinedTradeSystem") >= 0)
+         return true;
+   }
+   return false;
+}
+
+//+------------------------------------------------------------------+
+//| Ağırlıklı sinyal dağılımını hesapla                              |
+//+------------------------------------------------------------------+
+void CalculateWeightedSignalDistribution(string symbol, double &longPercent, double &shortPercent, double &holdPercent)
+{
+    double weights[6];
+    weights[0] = Weight_W1;
+    weights[1] = Weight_D1;
+    weights[2] = Weight_H4;
+    weights[3] = Weight_H1;
+    weights[4] = Weight_M30;
+    weights[5] = Weight_M15;
+    
+    double weightedLong = 0, weightedShort = 0, weightedHold = 0;
+    
+    // Her timeframe için ağırlıklı hesaplama
+    for(int tf = 0; tf < ArraySize(TimeframeList); tf++)
+    {
+        int signals[];
+        GetSignalState(symbol, TimeframeValues[tf], signals);
+        
+        // Sadece DCO, CON3 ve CON4 sinyalleri için (index 1,2,3)
+        for(int i = 1; i <= 3; i++)
+        {
+            double weight = weights[tf] / 3.0;  // Her indikatör için ağırlığı 3'e böl
+            
+            if(signals[i] == SIGNAL_LONG) weightedLong += weight;
+            else if(signals[i] == SIGNAL_SHORT) weightedShort += weight;
+            else weightedHold += weight;
+        }
+    }
+    
+    // Sonuçları ata
+    longPercent = weightedLong;
+    shortPercent = weightedShort;
+    holdPercent = weightedHold;
+}
+
+//+------------------------------------------------------------------+
 //| Custom indicator iteration function                                |
 //+------------------------------------------------------------------+
 int OnCalculate(const int rates_total,
@@ -589,4 +559,6 @@ int OnCalculate(const int rates_total,
    return(rates_total);
 }
 //+------------------------------------------------------------------+
+
+
 
