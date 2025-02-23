@@ -314,9 +314,11 @@ bool ReadNewsFile()
 //+------------------------------------------------------------------+
 void UpdateRiskTable()
 {
+   Print("Risk tablosu güncelleniyor");
    string prefix = IndicatorObjPrefix + "Risk_";
    
    // Risk tablosu başlığı
+   Print("Risk tablosu başlığı oluşturuluyor");
    CreateCell(prefix + "Header", RiskTableX, RiskTableY, 
              "Risk Faktörleri", HeaderColor, TextColor);
              
@@ -325,10 +327,12 @@ void UpdateRiskTable()
    
    // Spread kontrolü
    currentSpread = MarketInfo(Symbol(), MODE_SPREAD) * Point * 10;
+   Print("Mevcut spread: ", currentSpread);
    if(currentSpread > 0)
    {
       string spreadText = "Spread: " + DoubleToStr(currentSpread, 1) + " pips";
       color spreadColor = currentSpread > PipThreshold ? clrCrimson : clrForestGreen;
+      Print("Spread durumu: ", spreadText, " - Renk: ", spreadColor);
       CreateCell(prefix + "Spread", RiskTableX, rowY, spreadText, 
                 HeaderColor, spreadColor);
       currentRow++;
@@ -337,10 +341,12 @@ void UpdateRiskTable()
    
    // Volatilite (ATR) kontrolü
    currentATR = iATR(NULL, PERIOD_CURRENT, ATR_Period, 0);
+   Print("Mevcut ATR: ", currentATR);
    if(currentATR > 0)
    {
       string atrText = "ATR: " + DoubleToStr(currentATR, Digits);
       color atrColor = currentATR > PipThreshold * Point * 10 ? clrCrimson : clrForestGreen;
+      Print("ATR durumu: ", atrText, " - Renk: ", atrColor);
       CreateCell(prefix + "ATR", RiskTableX, rowY, atrText, 
                 HeaderColor, atrColor);
       currentRow++;
@@ -348,6 +354,7 @@ void UpdateRiskTable()
    }
    
    // Yaklaşan haberleri göster
+   Print("Aktif haber sayısı: ", ArraySize(activeNews));
    if(ArraySize(activeNews) > 0)
    {
       for(int i = 0; i < ArraySize(activeNews); i++)
@@ -362,7 +369,8 @@ void UpdateRiskTable()
             color newsColor = activeNews[i].impact == "High" ? clrCrimson :
                             activeNews[i].impact == "Medium" ? clrDarkOrange :
                             clrForestGreen;
-                            
+            
+            Print("Haber gösteriliyor: ", newsText, " - Renk: ", newsColor);
             CreateCell(prefix + "News" + IntegerToString(i), 
                       RiskTableX, rowY, newsText, HeaderColor, newsColor);
             
@@ -373,6 +381,7 @@ void UpdateRiskTable()
                            IntegerToString(activeNews[i].minutesUntil) + " dk sonra" :
                            "Şu anda aktif";
             
+            Print("Zaman bilgisi gösteriliyor: ", timeText);
             CreateCell(prefix + "NewsTime" + IntegerToString(i), 
                       RiskTableX, rowY, timeText, HeaderColor, newsColor);
             
@@ -381,6 +390,7 @@ void UpdateRiskTable()
          }
       }
    }
+   Print("Risk tablosu güncelleme tamamlandı");
 }
 
 //+------------------------------------------------------------------+
