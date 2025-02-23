@@ -74,3 +74,138 @@ extern int        RowHeight         = 20;           // Satır Yüksekliği
 extern string     RiskTableSettings = "===== Risk Tablosu Ayarları =====";
 extern int        RiskTableX        = 20;    // Risk Tablosu X Koordinatı
 extern int        RiskTableY        = 20;    // Risk Tablosu Y Koordinatı
+
+// Global Değişkenler
+string           IndicatorName;
+string           IndicatorObjPrefix;
+int              TimeFrames[6];
+string           TimeFrameNames[6];
+
+// Haber yapısı ve dizisi
+struct NewsEvent {
+    datetime time;
+    string currency;
+    string event;
+    string impact;
+    int minutesUntil;
+};
+NewsEvent activeNews[];
+
+// Para birimi bilgisi
+string currentSymbolCurrencies[2];  // Örn: EUR/USD için [EUR, USD]
+
+// İndikatör tamponları
+double DC20Upper[], DC20Lower[], DC20Mid[];
+double DC55Upper[], DC55Lower[], DC55Mid[];
+double ADXBuffer[], ADXPlusBuffer[];
+
+// Son alert durumları takibi için
+datetime LastAlertTime[];
+int LastDCSignal[];
+
+// Risk faktörleri için
+bool hasHighSpread = false;
+bool hasHighVolatility = false;
+bool hasUpcomingNews = false;
+double currentATR = 0;
+double currentSpread = 0;
+
+//+------------------------------------------------------------------+
+//| Custom indicator initialization function                           |
+//+------------------------------------------------------------------+
+int init()
+{
+   // Timeframe dizilerini doldur
+   TimeFrames[0] = PERIOD_W1;
+   TimeFrames[1] = PERIOD_D1;
+   TimeFrames[2] = PERIOD_H4;
+   TimeFrames[3] = PERIOD_H1;
+   TimeFrames[4] = PERIOD_M30;
+   TimeFrames[5] = PERIOD_M15;
+   
+   TimeFrameNames[0] = "W";
+   TimeFrameNames[1] = "D";
+   TimeFrameNames[2] = "4H";
+   TimeFrameNames[3] = "1H";
+   TimeFrameNames[4] = "30M";
+   TimeFrameNames[5] = "15M";
+   
+   IndicatorName = "CombinedTradeSystem2";
+   IndicatorObjPrefix = "##" + IndicatorName + "##";
+   
+   // Alert takibi için dizileri hazırla
+   ArrayResize(LastAlertTime, ArraySize(TimeFrames));
+   ArrayResize(LastDCSignal, ArraySize(TimeFrames));
+   ArrayInitialize(LastAlertTime, 0);
+   ArrayInitialize(LastDCSignal, SIGNAL_HOLD);
+   
+   // Para birimlerini ayarla
+   GetSymbolCurrencies();
+   
+   // Buffer ayarları
+   SetIndexBuffer(0, DC20Upper);
+   SetIndexBuffer(1, DC20Lower);
+   SetIndexBuffer(2, DC20Mid);
+   SetIndexBuffer(3, DC55Upper);
+   SetIndexBuffer(4, DC55Lower);
+   SetIndexBuffer(5, DC55Mid);
+   SetIndexBuffer(6, ADXBuffer);
+   SetIndexBuffer(7, ADXPlusBuffer);
+   
+   return(INIT_SUCCEEDED);
+}
+
+//+------------------------------------------------------------------+
+//| Custom indicator deinitialization function                         |
+//+------------------------------------------------------------------+
+int deinit()
+{
+   ObjectsDeleteAll(0, IndicatorObjPrefix);
+   return(0);
+}
+
+//+------------------------------------------------------------------+
+//| Para birimlerini ayıklama fonksiyonu                              |
+//+------------------------------------------------------------------+
+void GetSymbolCurrencies()
+{
+   string symbol = Symbol();
+   
+   // Normal forex çiftleri için (örn: EURUSD)
+   if(StringLen(symbol) == 6)
+   {
+      currentSymbolCurrencies[0] = StringSubstr(symbol, 0, 3);
+      currentSymbolCurrencies[1] = StringSubstr(symbol, 3, 3);
+   }
+   // Metaller için (örn: XAUUSD)
+   else if(StringLen(symbol) == 6 && 
+           (StringSubstr(symbol, 0, 3) == "XAU" || 
+            StringSubstr(symbol, 0, 3) == "XAG"))
+   {
+      currentSymbolCurrencies[0] = StringSubstr(symbol, 0, 3);
+      currentSymbolCurrencies[1] = StringSubstr(symbol, 3, 3);
+   }
+   // Endeksler için özel kontrol
+   else
+   {
+      if(StringFind(symbol, "US30") != -1 || 
+         StringFind(symbol, "SPX500") != -1 || 
+         StringFind(symbol, "NAS100") != -1)
+      {
+         currentSymbolCurrencies[0] = "USD";
+         currentSymbolCurrencies[1] = "USD";
+      }
+      else if(StringFind(symbol, "GER30") != -1 || 
+              StringFind(symbol, "FRA40") != -1)
+      {
+         currentSymbolCurrencies[0] = "EUR";
+         currentSymbolCurrencies[1] = "EUR";
+      }
+      else if(StringFind(symbol, "UK100") != -1)
+      {
+         currentSymbolCurrencies[0] = "GBP";
+         currentSymbolCurrencies[1] = "GBP";
+      }
+   }
+}
+Last edited just now
