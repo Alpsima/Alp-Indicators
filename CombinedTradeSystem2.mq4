@@ -659,7 +659,7 @@ string TimeframeToString(int timeframe)
       case PERIOD_M30: return "M30";
       case PERIOD_H1:  return "H1";
       case PERIOD_H4:  return "H4";
-      ccase PERIOD_D1:  return "D1";
+      case PERIOD_D1:  return "D1";
       case PERIOD_W1:  return "W1";
       case PERIOD_MN1: return "MN";
       default: return "Unknown";
