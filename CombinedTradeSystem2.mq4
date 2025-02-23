@@ -176,50 +176,67 @@ void CheckNews()
    string file_path = TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL4\\Files\\forex_calendar.csv";
    Print("Haber dosyası yolu: " + file_path);
    
-   if(FileIsExist(file_path))
-   {
-      Print("Dosya mevcut");
-   }
-   else
+   if(!FileIsExist(file_path))
    {
       Print("Dosya bulunamadı: " + file_path);
       return;
    }
    
-   int handle = FileOpen(file_path, FILE_READ|FILE_CSV);
+   int handle = FileOpen(file_path, FILE_READ|FILE_CSV|FILE_ANSI);
    if(handle == INVALID_HANDLE)
    {
       Print("Dosya açılamadı. Hata kodu: ", GetLastError());
       return;
    }
+   
    Print("Dosya başarıyla açıldı");
-
-   string line;
-   bool header_skipped = false;
    datetime current_time = TimeLocal();
+   string separator = ",";
+   
+   // Header satırını atla
+   string header = FileReadString(handle);
    
    while(!FileIsEnding(handle))
    {
-      line = FileReadString(handle);
-      if(!header_skipped)
+      // Tüm satırı tek seferde oku
+      string full_line = FileReadString(handle);
+      if(StringLen(full_line) < 5) continue; // Boş satırları atla
+      
+      // Satırı parçalara ayır
+      string parts[];
+      StringSplit(full_line, StringGetCharacter(separator, 0), parts);
+      
+      if(ArraySize(parts) < 5)
       {
-         header_skipped = true;
-         Print("Header satırı atlandı");
+         Print("Hatalı satır formatı: ", full_line);
          continue;
       }
       
-      // Satır bilgilerini al ve kontrol et
-      string date_str = FileReadString(handle);
-      string time_str = FileReadString(handle);
-      string currency = FileReadString(handle);
-      string event = FileReadString(handle);
-      string impact = FileReadString(handle);
+      string date_str = parts[0];
+      string time_str = parts[1];
+      string currency = parts[2];
+      string event = parts[3];
+      string impact = parts[4];
       
-      Print("Okunan haber: ", date_str, " ", time_str, " ", currency, " ", event, " ", impact);
+      // Tarih ve saati işle
+      datetime news_time = StringToTime(date_str + " " + time_str);
+      
+      Print("İşlenen haber: Tarih=", date_str, " Saat=", time_str, 
+            " Para Birimi=", currency, " Olay=", event, " Etki=", impact,
+            " Unix Time=", news_time);
+            
+      // Para birimi kontrolü
+      if(StringFind(Symbol(), currency) >= 0)
+      {
+         if(news_time > current_time)
+         {
+            Print("Aktif haber bulundu: ", currency, " - ", event);
+         }
+      }
    }
    
    FileClose(handle);
-   Print("Dosya kapatıldı");
+   Print("Dosya kapatıldı ve işlem tamamlandı");
 }
 
 //+------------------------------------------------------------------+
