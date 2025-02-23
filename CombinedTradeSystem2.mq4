@@ -208,3 +208,139 @@ void GetSymbolCurrencies()
       }
    }
 }
+
+//+------------------------------------------------------------------+
+//| Haber dosyasını okuma fonksiyonu                                  |
+//+------------------------------------------------------------------+
+bool ReadNewsFile()
+{
+   ArrayResize(activeNews, 0);
+   
+   string filename = NewsFile;
+   int handle = FileOpen(filename, FILE_READ|FILE_CSV|FILE_ANSI, ",");
+   if(handle == INVALID_HANDLE)
+   {
+      Print("Haber dosyası açılamadı: ", filename);
+      return false;
+   }
+   
+   datetime currentTime = TimeCurrent();
+   
+   // Başlık satırını atla
+   if(FileIsEnding(handle)) { FileClose(handle); return false; }
+   FileReadString(handle);
+   
+   while(!FileIsEnding(handle))
+   {
+      // CSV formatı: Date,Time,Currency,Event,Impact
+      string dateStr = FileReadString(handle);
+      string timeStr = FileReadString(handle);
+      string currency = FileReadString(handle);
+      string event = FileReadString(handle);
+      string impact = FileReadString(handle);
+      
+      // Tarihi datetime'a çevir
+      datetime newsTime = StrToTime(dateStr + " " + timeStr);
+      
+      // Süresi dolmuş haberleri atla
+      if(newsTime < currentTime - NewsAfterMinutes * 60) continue;
+      
+      // Gelecek haberleri kontrol et
+      if(newsTime > currentTime + 24 * 60 * 60) continue;
+      
+      // Etki seviyesi kontrolü
+      if(impact == "High" && !FilterHighImpact) continue;
+      if(impact == "Medium" && !FilterMediumImpact) continue;
+      if(impact == "Low" && !FilterLowImpact) continue;
+      
+      // Para birimi kontrolü
+      if(currency != currentSymbolCurrencies[0] && 
+         currency != currentSymbolCurrencies[1]) continue;
+      
+      // Haber bilgilerini kaydet
+      int idx = ArraySize(activeNews);
+      ArrayResize(activeNews, idx + 1);
+      activeNews[idx].time = newsTime;
+      activeNews[idx].currency = currency;
+      activeNews[idx].event = event;
+      activeNews[idx].impact = impact;
+      activeNews[idx].minutesUntil = (int)((newsTime - currentTime) / 60);
+   }
+   
+   FileClose(handle);
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Risk tablosunu güncelleme fonksiyonu                              |
+//+------------------------------------------------------------------+
+void UpdateRiskTable()
+{
+   string prefix = IndicatorObjPrefix + "Risk_";
+   
+   // Risk tablosu başlığı
+   CreateCell(prefix + "Header", RiskTableX, RiskTableY, 
+             "Risk Faktörleri", HeaderColor, TextColor);
+             
+   int currentRow = 1;
+   int rowY = RiskTableY + currentRow * RowHeight;
+   
+   // Spread kontrolü
+   currentSpread = MarketInfo(Symbol(), MODE_SPREAD) * Point * 10;
+   if(currentSpread > 0)
+   {
+      string spreadText = "Spread: " + DoubleToStr(currentSpread, 1) + " pips";
+      color spreadColor = currentSpread > PipThreshold ? clrCrimson : clrForestGreen;
+      CreateCell(prefix + "Spread", RiskTableX, rowY, spreadText, 
+                HeaderColor, spreadColor);
+      currentRow++;
+      rowY = RiskTableY + currentRow * RowHeight;
+   }
+   
+   // Volatilite (ATR) kontrolü
+   currentATR = iATR(NULL, PERIOD_CURRENT, ATR_Period, 0);
+   if(currentATR > 0)
+   {
+      string atrText = "ATR: " + DoubleToStr(currentATR, Digits);
+      color atrColor = currentATR > PipThreshold * Point * 10 ? clrCrimson : clrForestGreen;
+      CreateCell(prefix + "ATR", RiskTableX, rowY, atrText, 
+                HeaderColor, atrColor);
+      currentRow++;
+      rowY = RiskTableY + currentRow * RowHeight;
+   }
+   
+   // Yaklaşan haberleri göster
+   if(ArraySize(activeNews) > 0)
+   {
+      for(int i = 0; i < ArraySize(activeNews); i++)
+      {
+         if(activeNews[i].minutesUntil >= -NewsAfterMinutes && 
+            activeNews[i].minutesUntil <= NewsBeforeMinutes)
+         {
+            string newsText = activeNews[i].currency + " " + 
+                            activeNews[i].event + " (" + 
+                            activeNews[i].impact + ")";
+            
+            color newsColor = activeNews[i].impact == "High" ? clrCrimson :
+                            activeNews[i].impact == "Medium" ? clrDarkOrange :
+                            clrForestGreen;
+                            
+            CreateCell(prefix + "News" + IntegerToString(i), 
+                      RiskTableX, rowY, newsText, HeaderColor, newsColor);
+            
+            // Kalan süreyi göster
+            rowY += RowHeight;
+            currentRow++;
+            string timeText = activeNews[i].minutesUntil > 0 ?
+                           IntegerToString(activeNews[i].minutesUntil) + " dk sonra" :
+                           "Şu anda aktif";
+            
+            CreateCell(prefix + "NewsTime" + IntegerToString(i), 
+                      RiskTableX, rowY, timeText, HeaderColor, newsColor);
+            
+            currentRow++;
+            rowY = RiskTableY + currentRow * RowHeight;
+         }
+      }
+   }
+}
